@@ -1,0 +1,28 @@
+name: Run Anime Scraper Every Hour
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # ⏰ كل ساعة عند الدقيقة صفر
+  workflow_dispatch:       # 🚀 تشغيل يدوي من GitHub UI
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🧾 سحب المستودع
+        uses: actions/checkout@v3
+
+      - name: 🔽 إعداد Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 📦 تثبيت المتطلبات
+        run: pip install cloudscraper beautifulsoup4
+
+      - name: ▶️ تشغيل السكربت
+        env:
+          ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}  # ✅ تمرير رابط Webhook
+        run: python main.py
