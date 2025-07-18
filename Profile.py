@@ -4,29 +4,27 @@ import re
 import json
 import base64
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 # إعدادات GitHub
 access_token = os.getenv("ACCESS_TOKEN")
 repo_name = "abdo12249/1"
 remote_path = "test1/animes.json"
+missing_anime_file = "missing_anime_log.json"
 
 scraper = cloudscraper.create_scraper()
 
-def extract_anime_id_from_episode_url(episode_url):
-    path = urlparse(episode_url).path
-    last_part = path.strip("/").split("/")[-1]
-    anime_id = re.sub(r"-الحلقة-[0-9]+", "", last_part)
-    return anime_id
+def extract_anime_id_from_custom_url(custom_url):
+    """استخراج id من رابط مثل /المشاهده.html?id=bullet-bullet&episode=1"""
+    query = parse_qs(urlparse(custom_url).query)
+    return query.get("id", [None])[0]
 
-def fetch_anime_info_from_url(episode_url):
-    anime_id = extract_anime_id_from_episode_url(episode_url)
+def fetch_anime_info(anime_id):
     anime_url = f"https://4d.qerxam.shop/anime/{anime_id}/"
-
     print(f"📥 فتح الصفحة: {anime_url}")
     response = scraper.get(anime_url)
     if response.status_code != 200:
-        print("❌ فشل تحميل الصفحة")
+        print(f"❌ فشل تحميل الصفحة: {anime_url}")
         return None
 
     tree = html.fromstring(response.content)
@@ -74,7 +72,6 @@ def upload_to_github(anime_data):
     api_url = f"https://api.github.com/repos/{repo_name}/contents/{remote_path}"
     headers = {"Authorization": f"token {access_token}"}
 
-    # جلب الملف الحالي
     response = scraper.get(api_url, headers=headers)
     current_data = {}
     sha = None
@@ -86,14 +83,12 @@ def upload_to_github(anime_data):
             current_data = json.loads(content_decoded)
         except Exception as e:
             print("⚠️ فشل قراءة animes.json:", str(e))
-            current_data = {}
     elif response.status_code == 404:
         print("📁 سيتم إنشاء ملف animes.json جديد.")
     else:
         print("❌ خطأ غير متوقع أثناء جلب animes.json:", response.status_code)
         return
 
-    # تحديث البيانات
     updated = False
     for anime_id, info in anime_data.items():
         if anime_id not in current_data:
@@ -107,7 +102,6 @@ def upload_to_github(anime_data):
         print("✅ لا توجد بيانات جديدة لإضافتها.")
         return
 
-    # تجهيز المحتوى للرفع
     new_content = json.dumps(current_data, ensure_ascii=False, indent=2)
     encoded_content = base64.b64encode(new_content.encode()).decode()
 
@@ -125,9 +119,29 @@ def upload_to_github(anime_data):
     else:
         print("❌ فشل رفع animes.json:", put_response.status_code, put_response.text)
 
-# ========= التنفيذ =========
-episode_url = "https://4d.qerxam.shop/episode/bullet-bullet-%d8%a7%d9%84%d8%ad%d9%84%d9%82%d8%a9-7/"
-anime_info = fetch_anime_info_from_url(episode_url)
+# ========== التنفيذ ==========
 
-if anime_info:
-    upload_to_github(anime_info)
+if not os.path.exists(missing_anime_file):
+    print("❌ لم يتم العثور على ملف missing_anime_log.json")
+    exit()
+
+with open(missing_anime_file, "r", encoding="utf-8") as f:
+    try:
+        missing_log = json.load(f)
+    except json.JSONDecodeError:
+        print("❌ خطأ في قراءة ملف missing_anime_log.json (صيغة غير صحيحة)")
+        exit()
+
+for entry in missing_log:
+    custom_url = entry.get("episode_link")
+    if not custom_url:
+        continue
+
+    anime_id = extract_anime_id_from_custom_url(custom_url)
+    if not anime_id:
+        print("❌ لم يتم استخراج anime_id من الرابط:", custom_url)
+        continue
+
+    anime_info = fetch_anime_info(anime_id)
+    if anime_info:
+        upload_to_github(anime_info)
