@@ -138,6 +138,50 @@ def log_missing_anime(anime_title, episode_link):
     else:
         print(f"ℹ️ الأنمي '{anime_title}' موجود بالفعل في سجل الأنميات المفقودة. تم التخطي.")
 
+def update_new_json_list(new_anime_filename):
+    """
+    تحديث ملف الجديد.json عند إنشاء ملف جديد لأنمي.
+    """
+    new_json_url = f"https://abdo12249.github.io/1/test1/episodes/{new_anime_filename}"
+    api_url = f"https://api.github.com/repos/{repo_name}/contents/test1/الجديد.json"
+    headers = {"Authorization": f"token {access_token}"}
+
+    # جلب المحتوى الحالي
+    response = scraper.get(api_url, headers=headers)
+    sha = None
+    data = {"animes": []}
+
+    if response.status_code == 200:
+        sha = response.json().get("sha")
+        try:
+            content_decoded = base64.b64decode(response.json().get("content")).decode("utf-8")
+            data = json.loads(content_decoded)
+        except Exception as e:
+            print("⚠️ فشل قراءة محتوى الجديد.json:", str(e))
+    else:
+        print("📁 سيتم إنشاء ملف الجديد.json جديد.")
+
+    # تحقق من وجود الرابط لتجنب التكرار
+    if new_json_url not in data["animes"]:
+        data["animes"].append(new_json_url)
+        content_to_upload = json.dumps(data, indent=2, ensure_ascii=False)
+        encoded_content = base64.b64encode(content_to_upload.encode()).decode()
+
+        payload = {
+            "message": f"تحديث ملف الجديد.json بإضافة {new_anime_filename}",
+            "content": encoded_content,
+            "branch": "main"
+        }
+        if sha:
+            payload["sha"] = sha
+
+        r = scraper.put(api_url, headers=headers, json=payload)
+        if r.status_code in [200, 201]:
+            print("📄 تم تعديل الجديد.json ✅")
+        else:
+            print("❌ فشل تعديل الجديد.json:", r.status_code, r.text)
+    else:
+        print("ℹ️ الرابط موجود مسبقًا في الجديد.json، تم التخطي.")
 
 def save_to_json(anime_title, episode_number, episode_title, servers):
     anime_id = to_id_format(anime_title)
@@ -172,11 +216,12 @@ def save_to_json(anime_title, episode_number, episode_title, servers):
         if r.status_code in [200, 201]:
             print(f"✅ تم إنشاء الملف ورفع البيانات على GitHub.")
             send_discord_notification(anime_title, episode_number, ep_data["link"], ep_data["image"])
-            # تسجيل الأنمي في ملف السجل الجديد
             log_missing_anime(anime_title, ep_data["link"])
+            update_new_json_list(filename)  # ✅ هذا السطر الجديد المهم
         else:
             print(f"❌ فشل إنشاء الملف على GitHub: {r.status_code} {r.text}")
         return
+
 
     if github_data is None:
         print("⚠️ لم أتمكن من تحميل محتوى الملف من GitHub.")
