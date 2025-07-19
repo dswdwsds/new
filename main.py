@@ -14,7 +14,7 @@ access_token = os.getenv("ACCESS_TOKEN")
 repo_name = "abdo12249/1"
 remote_folder = "test1/episodes"
 
-إعدادات ملف السجل للأنميات المفقودة
+
 
 repo_name_log = "abdo12249/test" # يمكن تغيير هذا المستودع إذا لزم الأمر
 missing_anime_log_filename = "missing_anime_log.json"
@@ -263,7 +263,7 @@ if updated:
     else:  
         print(f"❌ فشل رفع التحديث إلى GitHub: {r.status_code} {r.text}")
 
-التنفيذ
+
 
 all_links = get_episode_links()
 
