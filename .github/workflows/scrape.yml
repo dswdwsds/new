@@ -25,9 +25,11 @@ jobs:
     - name: Run main.py
       env:
         ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: python main.py
 
     - name: Run Profile.py
       env:
         ACCESS_TOKEN: ${{ secrets.ACCESS_TOKEN }}
+        DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
       run: python Profile.py
