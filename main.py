@@ -26,10 +26,10 @@ HEADERS = {"User-Agent": "Mozilla/5.0"}
 scraper = cloudscraper.create_scraper()
 
 def to_id_format(text):
-text = text.strip().lower()
-text = text.replace(":", "")
-text = re.sub(r"[^a-z0-9()!- ]", "", text)
-return text.replace(" ", "-")
+    text = text.strip().lower()
+    text = text.replace(":", "")
+    text = re.sub(r"[^a-z0-9()!- ]", "", text)
+    return text.replace(" ", "-")
 
 def get_episode_links():
 print("📄 تحميل صفحة الحلقات...")
