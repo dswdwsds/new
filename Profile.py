@@ -1,23 +1,77 @@
 import cloudscraper
 from lxml import html
-import re
 import json
 import base64
 import os
+import requests
 from urllib.parse import urlparse, parse_qs
+from PIL import Image
+from io import BytesIO
 
 # إعدادات GitHub
 access_token = os.getenv("ACCESS_TOKEN")
 repo_name = "abdo12249/1"
 remote_path = "test1/animes.json"
+github_image_base = "https://abdo12249.github.io/1/images"
 missing_anime_file = "missing_anime_log.json"
 
 scraper = cloudscraper.create_scraper()
 
 def extract_anime_id_from_custom_url(custom_url):
-    """استخراج id من رابط مثل /المشاهده.html?id=bullet-bullet&episode=1"""
     query = parse_qs(urlparse(custom_url).query)
     return query.get("id", [None])[0]
+
+def upload_image_to_github(image_bytes, path, commit_message):
+    api_url = f"https://api.github.com/repos/{repo_name}/contents/{path}"
+    headers = {"Authorization": f"token {access_token}"}
+
+    # التحقق من وجود الصورة أولاً للحصول على sha إذا كانت موجودة
+    sha = None
+    check_response = scraper.get(api_url, headers=headers)
+    if check_response.status_code == 200:
+        try:
+            sha = check_response.json().get("sha")
+        except:
+            pass
+
+    encoded_content = base64.b64encode(image_bytes).decode()
+
+    payload = {
+        "message": commit_message,
+        "content": encoded_content,
+        "branch": "main"
+    }
+    if sha:
+        payload["sha"] = sha
+
+    put_response = scraper.put(api_url, headers=headers, json=payload)
+    if put_response.status_code in [200, 201]:
+        print(f"✅ تم رفع الصورة إلى GitHub: {path}")
+    else:
+        print(f"❌ فشل رفع الصورة: {put_response.status_code} {put_response.text}")
+
+def download_and_convert_to_webp(image_url, anime_id):
+    try:
+        response = requests.get(image_url, timeout=10)
+        if response.status_code == 200:
+            img = Image.open(BytesIO(response.content)).convert("RGB")
+            buffer = BytesIO()
+            img.save(buffer, "webp")
+            buffer.seek(0)
+
+            filename = f"{anime_id}.webp"
+            github_path = f"images/{filename}"
+            github_url = f"{github_image_base}/{filename}"
+
+            upload_image_to_github(buffer.getvalue(), github_path, f"رفع صورة الأنمي {anime_id}")
+
+            return github_url
+        else:
+            print(f"❌ فشل تحميل الصورة: {image_url}")
+            return ""
+    except Exception as e:
+        print(f"❌ خطأ أثناء تحميل أو تحويل الصورة: {e}")
+        return ""
 
 def fetch_anime_info(anime_id):
     anime_url = f"https://4d.qerxam.shop/anime/{anime_id}/"
@@ -41,10 +95,10 @@ def fetch_anime_info(anime_id):
         except:
             return ""
 
-    # ✅ استخدام نفس XPATHs من Selenium
     title = get_text("/html/body/div[2]/div/div/div[2]/div/h1")
     description = get_text("/html/body/div[2]/div/div/div[2]/div/p")
-    image = get_attr("/html/body/div[2]/div/div/div[1]/div/img", "src")
+    original_image_url = get_attr("/html/body/div[2]/div/div/div[1]/div/img", "src")
+    image_url = download_and_convert_to_webp(original_image_url, anime_id)
     tags = [tag.text_content().strip() for tag in tree.xpath("/html/body/div[2]/div/div/div[2]/div/ul/li") if tag.text_content().strip()]
     type_ = get_text("/html/body/div[2]/div/div/div[2]/div/div[1]/div[1]/div/a")
     status = get_text("/html/body/div[2]/div/div/div[2]/div/div[1]/div[3]/div/a")
@@ -57,7 +111,7 @@ def fetch_anime_info(anime_id):
         anime_id: {
             "title": title,
             "description": description,
-            "image": image,
+            "image": image_url,
             "tags": tags,
             "type": type_,
             "status": status,
@@ -129,7 +183,7 @@ with open(missing_anime_file, "r", encoding="utf-8") as f:
     try:
         missing_log = json.load(f)
     except json.JSONDecodeError:
-        print("❌ خطأ في قراءة ملف missing_anime_log.json (صيغة غير صحيحة)")
+        print("❌ خطأ في قراءة ملف missing_anime_log.json")
         exit()
 
 for entry in missing_log:
