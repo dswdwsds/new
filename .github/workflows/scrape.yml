@@ -24,7 +24,11 @@ jobs:
         pip install -r requirements.txt
 
     - name: Run main.py
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: python main.py
 
     - name: Run Profile.py
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: python Profile.py
