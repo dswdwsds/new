@@ -30,14 +30,15 @@ scraper = cloudscraper.create_scraper()
 def to_id_format(text):
     text = text.strip().lower()
     text = text.replace(":", "")
-    text = re.sub(r"[^a-z0-9()!- ]", "", text)
+    # تم تصحيح التعبير العادي: تم نقل الواصلة إلى نهاية مجموعة الأحرف
+    text = re.sub(r"[^a-z0-9()! -]", "", text)
     return text.replace(" ", "-")
 
 def get_episode_links():
     print("📄 تحميل صفحة الحلقات...")
     response = scraper.get(EPISODE_LIST_URL, headers=HEADERS)
     if response.status_code != 200:
-        print("❌ فشل تحميل الصفحة")
+        print(f"❌ فشل تحميل الصفحة. الكود: {response.status_code}")
         return []
     soup = BeautifulSoup(response.text, "html.parser")
     return [a.get("href") for a in soup.select(".episodes-card-title a") if a.get("href", "").startswith("http")]
@@ -53,8 +54,15 @@ def check_episode_on_github(anime_title):
         if download_url:
             r = scraper.get(download_url)
             if r.status_code == 200:
-                return True, r.json()
-        return True, None # إذا كان الملف موجودًا ولكن لم نتمكن من تنزيله أو فك تشفيره
+                try:
+                    return True, r.json()
+                except json.JSONDecodeError:
+                    print(f"⚠️ فشل تحليل JSON لملف {filename} من GitHub.")
+                    return True, None # الملف موجود لكن لا يمكن قراءته كـ JSON صالح
+            else:
+                print(f"❌ فشل تنزيل محتوى {filename} من GitHub. الكود: {r.status_code}")
+                return True, None # الملف موجود لكن لا يمكن تنزيله
+        return True, None # الملف موجود لكن لا يوجد download_url
     elif response.status_code == 404:
         return False, None
     else:
@@ -64,20 +72,31 @@ def check_episode_on_github(anime_title):
 def get_episode_data(episode_url):
     response = scraper.get(episode_url, headers=HEADERS)
     if response.status_code != 200:
+        print(f"❌ فشل جلب بيانات الحلقة من {episode_url}. الكود: {response.status_code}")
         return None, None, None, None
     soup = BeautifulSoup(response.text, "html.parser")
     h3 = soup.select_one("div.main-section h3")
     full_title = h3.get_text(strip=True) if h3 else "غير معروف"
-    # تحسين استخلاص رقم الحلقة وعنوان الأنمي
+
     anime_title = "غير معروف"
     episode_number = "غير معروف"
-    if "الحلقة" in full_title:
-        parts = full_title.rsplit("الحلقة", 1)
-        anime_title = parts[0].strip()
-        episode_number = parts[1].strip()
+
+    # البحث عن "الحلقة" بأي طريقة كتابة (الحلقة، حلقه)
+    match = re.search(r"(الحلقة|حلقه)\s*(\d+)", full_title)
+    if match:
+        anime_title_parts = full_title.rsplit(match.group(0), 1)
+        anime_title = anime_title_parts[0].strip()
+        episode_number = match.group(2).strip()
     else:
-        # إذا لم يتم العثور على "الحلقة" في العنوان، اعتبر العنوان بالكامل هو عنوان الأنمي
+        # إذا لم يتم العثور على كلمة "الحلقة" أو "حلقه"، اعتبر العنوان بالكامل هو عنوان الأنمي
         anime_title = full_title.strip()
+        # يمكننا محاولة استخلاص رقم من النهاية إذا كان موجودًا
+        num_match = re.search(r'(\d+)$', anime_title)
+        if num_match:
+            episode_number = num_match.group(1)
+            anime_title = anime_title.rsplit(episode_number, 1)[0].strip()
+        else:
+            episode_number = "1" # افتراضيًا الحلقة 1 إذا لم يتم العثور على رقم
 
     servers = []
     for a in soup.select("ul#episode-servers li a"):
@@ -114,6 +133,7 @@ def log_missing_anime(anime_title, episode_link):
         print(f"ℹ️ ملف السجل {missing_anime_log_filename} غير موجود على GitHub. سيتم إنشاؤه.")
     else:
         print(f"❌ فشل جلب ملف السجل من GitHub: {response.status_code} {response.text}")
+        return # لا يمكن المتابعة إذا فشل الجلب بشكل كامل
 
     # إضافة الإدخال الجديد إذا لم يكن موجودًا بالفعل
     new_entry = {
@@ -163,13 +183,15 @@ def update_new_json_list(new_anime_filename):
             content_decoded = base64.b64decode(response.json().get("content")).decode("utf-8")
             data = json.loads(content_decoded)
         except Exception as e:
-            print(f"⚠️ فشل قراءة محتوى الجديد.json: {str(e)}. سيتم إنشاء ملف جديد.")
+            print(f"⚠️ فشل قراءة محتوى الجديد.json: {str(e)}. سيتم إنشاء ملف جديد أو استبدال المحتوى.")
+            # إذا فشل التحليل، نبدأ ببيانات فارغة لتجنب الأخطاء
+            data = {"animes": []}
         
     elif response.status_code == 404:
         print("📁 سيتم إنشاء ملف الجديد.json جديد.")
     else:
         print(f"❌ فشل جلب ملف الجديد.json من GitHub: {response.status_code} {response.text}")
-
+        return # لا يمكن المتابعة إذا فشل الجلب بشكل كامل
 
     # تحقق من وجود الرابط لتجنب التكرار
     if new_json_url not in data["animes"]:
@@ -202,8 +224,8 @@ def save_to_json(anime_title, episode_number, full_title, servers):
     exists_on_github, github_data = check_episode_on_github(anime_title)
 
     ep_data = {
-        "number": int(episode_number) if episode_number.isdigit() else episode_number,
-        "title": f"الحلقة {episode_number}", # يمكن أن يكون full_title أفضل هنا إذا كنت تريد العنوان الكامل للحلقة
+        "number": int(episode_number) if str(episode_number).isdigit() else episode_number,
+        "title": full_title, # استخدام full_title كعنوان للحلقة
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "link": f"https://abdo12249.github.io/1/test1/المشاهده.html?id={anime_id}&episode={episode_number}",
         "image": f"https://abdo12249.github.io/1/images/{anime_id}.webp", # تأكد من وجود صورة بهذا الاسم أو قم بتغيير المسار
@@ -233,35 +255,40 @@ def save_to_json(anime_title, episode_number, full_title, servers):
             print(f"❌ فشل إنشاء الملف على GitHub: {r.status_code} {r.text}")
         return
 
-    if github_data is None:
-        print("⚠️ لم أتمكن من تحميل محتوى الملف من GitHub أو كان فارغًا.")
-        return
-
-    updated = False
-    episode_exists_and_updated = False # علم جديد لتتبع ما إذا كانت الحلقة قد تم تحديثها بالفعل
-
-    # ابحث عن الحلقة وحدثها إذا كانت السيرفرات مختلفة
-    for i, ep in enumerate(github_data["episodes"]):
-        if str(ep["number"]) == str(ep_data["number"]):
-            if ep["servers"] != ep_data["servers"]:
-                github_data["episodes"][i] = ep_data
-                updated = True
-                episode_exists_and_updated = True
-                print(f"🔄 تم تحديث الحلقة {episode_number} لأن السيرفرات تغيرت.")
-                send_discord_notification(anime_title, episode_number, ep_data["link"], ep_data["image"])
-            else:
-                print(f"⚠️ الحلقة {episode_number} موجودة بنفس البيانات، تم تخطيها.")
-            break # بعد معالجة الحلقة الموجودة، نخرج من الحلقة الداخلية
-
-    # إذا لم يتم العثور على الحلقة، أضفها
-    if not episode_exists_and_updated:
-        github_data["episodes"].append(ep_data)
+    # إذا كان الملف موجودًا ولكن بياناته فارغة أو غير صالحة، نبدأ من جديد
+    if github_data is None or not isinstance(github_data, dict) or "episodes" not in github_data:
+        print(f"⚠️ ملف {filename} موجود على GitHub ولكن بياناته غير صالحة. سيتم إعادة تهيئته.")
+        github_data = {
+            "animeTitle": anime_title,
+            "episodes": [ep_data]
+        }
         updated = True
-        print(f"➕ تم إضافة الحلقة {episode_number} الجديدة.")
         send_discord_notification(anime_title, episode_number, ep_data["link"], ep_data["image"])
+    else:
+        updated = False
+        episode_found = False
 
+        for i, ep in enumerate(github_data["episodes"]):
+            if str(ep.get("number")) == str(ep_data["number"]):
+                episode_found = True
+                # تحقق إذا كانت السيرفرات أو العنوان قد تغير
+                if ep["servers"] != ep_data["servers"] or ep.get("title") != ep_data["title"]:
+                    github_data["episodes"][i] = ep_data
+                    updated = True
+                    print(f"🔄 تم تحديث الحلقة {episode_number} لأن السيرفرات أو العنوان تغير.")
+                    send_discord_notification(anime_title, episode_number, ep_data["link"], ep_data["image"])
+                else:
+                    print(f"⚠️ الحلقة {episode_number} موجودة بنفس البيانات، تم تخطيها.")
+                break # بما أننا وجدنا الحلقة، نخرج من الحلقة الداخلية ونكمل لرفع التحديث (إذا وجد)
+        
+        if not episode_found:
+            github_data["episodes"].append(ep_data)
+            updated = True
+            print(f"➕ تم إضافة الحلقة {episode_number} الجديدة.")
+            send_discord_notification(anime_title, episode_number, ep_data["link"], ep_data["image"])
+    
     if updated:
-        # تأكد من ترتيب الحلقات بعد الإضافة أو التحديث (اختياري)
+        # تأكد من ترتيب الحلقات بعد الإضافة أو التحديث
         # هذا يضمن أن الحلقات مرتبة رقميًا في ملف JSON
         github_data["episodes"].sort(key=lambda x: int(x["number"]) if str(x["number"]).isdigit() else float('inf'))
 
@@ -289,17 +316,24 @@ def save_to_json(anime_title, episode_number, full_title, servers):
 
 # التنفيذ الرئيسي
 def main():
+    print("بدء عملية فحص الحلقات الجديدة...")
     all_links = get_episode_links()
-    processed_anime_files = set() # لتتبع ملفات الأنمي التي تم معالجتها لتحديثها مرة واحدة فقط
+    
+    if not all_links:
+        print("لا توجد روابط حلقات جديدة تم العثور عليها. إنهاء العملية.")
+        return
 
     for idx, link in enumerate(all_links):
-        print(f"\n🔢 حلقة {idx+1}/{len(all_links)}")
+        print(f"\n--- معالجة الحلقة {idx+1}/{len(all_links)} ---")
         anime_name, episode_number, full_title, server_list = get_episode_data(link)
-        if anime_name and server_list:
+        
+        if anime_name and episode_number and server_list:
             save_to_json(anime_name, episode_number, full_title, server_list)
         else:
-            print("❌ تخطيت الحلقة بسبب خطأ في استخلاص البيانات.")
+            print(f"❌ تخطيت الحلقة {link} بسبب خطأ في استخلاص البيانات.")
         time.sleep(1) # تأخير لتجنب حظر IP أو تجاوز حدود معدل الطلبات
+
+    print("\n✅ انتهت عملية فحص الحلقات.")
 
 if __name__ == "__main__":
     main()
