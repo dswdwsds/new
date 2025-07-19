@@ -2,3 +2,4 @@ cloudscraper
 lxml
 requests
 pillow
+beautifulsoup4
