@@ -9,8 +9,6 @@ import base64
 import requests
 from notifier import send_discord_notification
 
-إعداد GitHub و Discord
-
 access_token = os.getenv("ACCESS_TOKEN")
 
 repo_name = "abdo12249/1"
