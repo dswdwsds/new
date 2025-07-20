@@ -1,3 +1,4 @@
+
 import cloudscraper
 from bs4 import BeautifulSoup
 import time
@@ -9,14 +10,13 @@ import base64
 import requests
 from notifier import send_discord_notification
 
-# إعداد GitHub و Discord
+# ط¥ط¹ط¯ط§ط¯ GitHub ظˆ Discord
 access_token = os.getenv("ACCESS_TOKEN")
-
 repo_name = "abdo12249/1"
 remote_folder = "test1/episodes"
 
-# إعدادات ملف السجل للأنميات المفقودة
-repo_name_log = "abdo12249/test" # يمكن تغيير هذا المستودع إذا لزم الأمر
+# ط¥ط¹ط¯ط§ط¯ط§طھ ظ…ظ„ظپ ط§ظ„ط³ط¬ظ„ ظ„ظ„ط£ظ†ظ…ظٹط§طھ ط§ظ„ظ…ظپظ‚ظˆط¯ط©
+repo_name_log = "abdo12249/test"
 missing_anime_log_filename = "missing_anime_log.json"
 
 BASE_URL = "https://4i.nxdwle.shop"
@@ -32,10 +32,10 @@ def to_id_format(text):
     return text.replace(" ", "-")
 
 def get_episode_links():
-    print("📄 تحميل صفحة الحلقات...")
+    print("ًں“„ طھط­ظ…ظٹظ„ طµظپط­ط© ط§ظ„ط­ظ„ظ‚ط§طھ...")
     response = scraper.get(EPISODE_LIST_URL, headers=HEADERS)
     if response.status_code != 200:
-        print("❌ فشل تحميل الصفحة")
+        print("â‌Œ ظپط´ظ„ طھط­ظ…ظٹظ„ ط§ظ„طµظپط­ط©")
         return []
     soup = BeautifulSoup(response.text, "html.parser")
     return [a.get("href") for a in soup.select(".episodes-card-title a") if a.get("href", "").startswith("http")]
@@ -64,14 +64,14 @@ def get_episode_data(episode_url):
         return None, None, None, None
     soup = BeautifulSoup(response.text, "html.parser")
     h3 = soup.select_one("div.main-section h3")
-    full_title = h3.get_text(strip=True) if h3 else "غير معروف"
-    if "الحلقة" in full_title:
-        parts = full_title.rsplit("الحلقة", 1)
+    full_title = h3.get_text(strip=True) if h3 else "ط؛ظٹط± ظ…ط¹ط±ظˆظپ"
+    if "ط§ظ„ط­ظ„ظ‚ط©" in full_title:
+        parts = full_title.rsplit("ط§ظ„ط­ظ„ظ‚ط©", 1)
         anime_title = parts[0].strip()
         episode_number = parts[1].strip()
     else:
         anime_title = full_title
-        episode_number = "غير معروف"
+        episode_number = "ط؛ظٹط± ظ…ط¹ط±ظˆظپ"
     servers = []
     for a in soup.select("ul#episode-servers li a"):
         name = a.get_text(strip=True)
@@ -84,13 +84,8 @@ def get_episode_data(episode_url):
     return anime_title, episode_number, full_title, servers
 
 def log_missing_anime(anime_title, episode_link):
-    """
-    تسجيل الأنميات التي لم يكن لها ملف JSON موجود وتم إنشاؤه حديثًا.
-    """
     api_url = f"https://api.github.com/repos/{repo_name_log}/contents/{missing_anime_log_filename}"
     headers = {"Authorization": f"token {access_token}"}
-
-    # محاولة جلب ملف السجل الحالي
     response = scraper.get(api_url, headers=headers)
     log_data = []
     sha = None
@@ -100,53 +95,34 @@ def log_missing_anime(anime_title, episode_link):
         try:
             content_decoded = base64.b64decode(response.json().get("content")).decode("utf-8")
             log_data = json.loads(content_decoded)
-        except (json.JSONDecodeError, TypeError):
-            print("⚠️ فشل فك تشفير أو تحليل ملف السجل الحالي. سيتم إنشاء ملف جديد.")
+        except:
             log_data = []
-    elif response.status_code == 404:
-        print(f"ℹ️ ملف السجل {missing_anime_log_filename} غير موجود على GitHub. سيتم إنشاؤه.")
-    else:
-        print(f"❌ فشل جلب ملف السجل من GitHub: {response.status_code} {response.text}")
+    elif response.status_code != 404:
+        return
 
-    # إضافة الإدخال الجديد إذا لم يكن موجودًا بالفعل
     new_entry = {
         "anime_title": anime_title,
         "episode_link": episode_link,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    # التحقق مما إذا كان الإدخال موجودًا بالفعل لتجنب التكرار
-    # يمكن تعديل هذا الشرط ليكون أكثر تحديدًا إذا لزم الأمر
     if not any(item.get("anime_title") == anime_title and item.get("episode_link") == episode_link for item in log_data):
         log_data.append(new_entry)
         content_to_upload = json.dumps(log_data, indent=2, ensure_ascii=False)
         encoded_content = base64.b64encode(content_to_upload.encode("utf-8")).decode()
-
         payload = {
-            "message": f"تحديث سجل الأنميات المفقودة: إضافة {anime_title}",
+            "message": f"طھط­ط¯ظٹط« ط³ط¬ظ„ ط§ظ„ط£ظ†ظ…ظٹط§طھ ط§ظ„ظ…ظپظ‚ظˆط¯ط©: ط¥ط¶ط§ظپط© {anime_title}",
             "content": encoded_content,
             "branch": "main"
         }
         if sha:
             payload["sha"] = sha
-
-        r = scraper.put(api_url, headers=headers, json=payload)
-        if r.status_code in [200, 201]:
-            print(f"✅ تم تحديث سجل الأنميات المفقودة في {missing_anime_log_filename} على GitHub.")
-        else:
-            print(f"❌ فشل رفع سجل الأنميات المفقودة إلى GitHub: {r.status_code} {r.text}")
-    else:
-        print(f"ℹ️ الأنمي '{anime_title}' موجود بالفعل في سجل الأنميات المفقودة. تم التخطي.")
+        scraper.put(api_url, headers=headers, json=payload)
 
 def update_new_json_list(new_anime_filename):
-    """
-    تحديث ملف الجديد.json عند إنشاء ملف جديد لأنمي.
-    """
     new_json_url = f"https://abdo12249.github.io/1/test1/episodes/{new_anime_filename}"
-    api_url = f"https://api.github.com/repos/{repo_name}/contents/test1/الجديد.json"
+    api_url = f"https://api.github.com/repos/{repo_name}/contents/test1/ط§ظ„ط¬ط¯ظٹط¯.json"
     headers = {"Authorization": f"token {access_token}"}
-
-    # جلب المحتوى الحالي
     response = scraper.get(api_url, headers=headers)
     sha = None
     data = {"animes": []}
@@ -156,76 +132,41 @@ def update_new_json_list(new_anime_filename):
         try:
             content_decoded = base64.b64decode(response.json().get("content")).decode("utf-8")
             data = json.loads(content_decoded)
-        except Exception as e:
-            print("⚠️ فشل قراءة محتوى الجديد.json:", str(e))
-    else:
-        print("📁 سيتم إنشاء ملف الجديد.json جديد.")
+        except:
+            data = {"animes": []}
 
-    # تحقق من وجود الرابط لتجنب التكرار
     if new_json_url not in data["animes"]:
         data["animes"].append(new_json_url)
         content_to_upload = json.dumps(data, indent=2, ensure_ascii=False)
         encoded_content = base64.b64encode(content_to_upload.encode()).decode()
-
         payload = {
-            "message": f"تحديث ملف الجديد.json بإضافة {new_anime_filename}",
+            "message": f"طھط­ط¯ظٹط« ظ…ظ„ظپ ط§ظ„ط¬ط¯ظٹط¯.json ط¨ط¥ط¶ط§ظپط© {new_anime_filename}",
             "content": encoded_content,
             "branch": "main"
         }
         if sha:
             payload["sha"] = sha
-
-        r = scraper.put(api_url, headers=headers, json=payload)
-        if r.status_code in [200, 201]:
-            print("📄 تم تعديل الجديد.json ✅")
-        else:
-            print("❌ فشل تعديل الجديد.json:", r.status_code, r.text)
-    else:
-        print("ℹ️ الرابط موجود مسبقًا في الجديد.json، تم التخطي.")
+        scraper.put(api_url, headers=headers, json=payload)
 
 def save_to_json(anime_title, episode_number, episode_title, servers):
     anime_id = to_id_format(anime_title)
     filename = anime_id + ".json"
-    api_url = f"https://api.github.com/repos/{repo_name}/contents/{remote_folder}/{filename}"
-    headers = {"Authorization": f"token {access_token}"}
     exists_on_github, github_data = check_episode_on_github(anime_title)
 
     ep_data = {
         "number": int(episode_number) if episode_number.isdigit() else episode_number,
-        "title": f"الحلقة {episode_number}",
+        "title": f"ط§ظ„ط­ظ„ظ‚ط© {episode_number}",
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "link": f"https://abdo12249.github.io/1/test1/المشاهده.html?id={anime_id}&episode={episode_number}",
+        "link": f"https://abdo12249.github.io/1/test1/ط§ظ„ظ…ط´ط§ظ‡ط¯ظ‡.html?id={anime_id}&episode={episode_number}",
         "image": f"https://abdo12249.github.io/1/images/{anime_id}.webp",
         "servers": servers
     }
 
-    if not exists_on_github:
-        print(f"🚀 إنشاء ملف جديد للأنمي: {filename}")
-        new_data = {
+    if not exists_on_github or github_data is None:
+        return filename, {
             "animeTitle": anime_title,
             "episodes": [ep_data]
-        }
-        content = json.dumps(new_data, indent=2, ensure_ascii=False)
-        encoded = base64.b64encode(content.encode()).decode()
-        payload = {
-            "message": f"إنشاء ملف {filename} مع الحلقة {episode_number}",
-            "content": encoded,
-            "branch": "main"
-        }
-        r = scraper.put(api_url, headers=headers, json=payload)
-        if r.status_code in [200, 201]:
-            print(f"✅ تم إنشاء الملف ورفع البيانات على GitHub.")
-            send_discord_notification(anime_title, episode_number, ep_data["link"], ep_data["image"])
-            log_missing_anime(anime_title, ep_data["link"])
-            update_new_json_list(filename)  # ✅ هذا السطر الجديد المهم
-        else:
-            print(f"❌ فشل إنشاء الملف على GitHub: {r.status_code} {r.text}")
-        return
-
-
-    if github_data is None:
-        print("⚠️ لم أتمكن من تحميل محتوى الملف من GitHub.")
-        return
+        }, "new", ep_data
 
     updated = False
     found = False
@@ -235,42 +176,52 @@ def save_to_json(anime_title, episode_number, episode_title, servers):
             if ep["servers"] != ep_data["servers"]:
                 github_data["episodes"][i] = ep_data
                 updated = True
-                print(f"🔄 تم تحديث الحلقة {episode_number} لأن السيرفرات تغيرت.")
-                send_discord_notification(anime_title, episode_number, ep_data["link"], ep_data["image"])
-            else:
-                print(f"⚠️ الحلقة {episode_number} موجودة بنفس البيانات، تم تخطيها.")
             break
     if not found:
         github_data["episodes"].append(ep_data)
         updated = True
-        print(f"➕ تم إضافة الحلقة {episode_number} الجديدة.")
-        send_discord_notification(anime_title, episode_number, ep_data["link"], ep_data["image"])
-    if updated:
-        content = json.dumps(github_data, indent=2, ensure_ascii=False)
-        encoded = base64.b64encode(content.encode()).decode()
-        sha_response = scraper.get(api_url, headers=headers)
-        sha = sha_response.json().get("sha") if sha_response.status_code == 200 else None
-        payload = {
-            "message": f"تحديث {filename} - الحلقة {episode_number}",
-            "content": encoded,
-            "branch": "main"
-        }
-        if sha:
-            payload["sha"] = sha
-        r = scraper.put(api_url, headers=headers, json=payload)
-        if r.status_code in [200, 201]:
-            print(f"🚀 تم رفع التحديث إلى GitHub بنجاح.")
-        else:
-            print(f"❌ فشل رفع التحديث إلى GitHub: {r.status_code} {r.text}")
 
-# التنفيذ
+    if updated:
+        return filename, github_data, "update", ep_data
+    else:
+        return None, None, "skip", None
+
+# ط§ظ„طھظ†ظپظٹط°
 all_links = get_episode_links()
+episodes_to_upload = {}
 
 for idx, link in enumerate(all_links):
-    print(f"\n🔢 حلقة {idx+1}/{len(all_links)}")
+    print(f"\nًں”¢ ط­ظ„ظ‚ط© {idx+1}/{len(all_links)}")
     anime_name, episode_number, full_title, server_list = get_episode_data(link)
     if anime_name and server_list:
-        save_to_json(anime_name, episode_number, full_title, server_list)
+        filename, updated_data, status, ep_data = save_to_json(anime_name, episode_number, full_title, server_list)
+        if status in ["new", "update"]:
+            episodes_to_upload[filename] = updated_data
+            send_discord_notification(anime_name, episode_number, ep_data["link"], ep_data["image"])
+            if status == "new":
+                log_missing_anime(anime_name, ep_data["link"])
+                update_new_json_list(filename)
     else:
-        print("❌ تخطيت الحلقة بسبب خطأ.")
+        print("â‌Œ طھط®ط·ظٹطھ ط§ظ„ط­ظ„ظ‚ط© ط¨ط³ط¨ط¨ ط®ط·ط£.")
     time.sleep(1)
+
+print("\nًںڑ€ ط±ظپط¹ ظƒظ„ ط§ظ„ظ…ظ„ظپط§طھ ط¥ظ„ظ‰ GitHub...")
+for filename, data in episodes_to_upload.items():
+    api_url = f"https://api.github.com/repos/{repo_name}/contents/{remote_folder}/{filename}"
+    headers = {"Authorization": f"token {access_token}"}
+    response = scraper.get(api_url, headers=headers)
+    sha = response.json().get("sha") if response.status_code == 200 else None
+    content = json.dumps(data, indent=2, ensure_ascii=False)
+    encoded = base64.b64encode(content.encode()).decode()
+    payload = {
+        "message": f"ط±ظپط¹ ط£ظˆ طھط­ط¯ظٹط« {filename}",
+        "content": encoded,
+        "branch": "main"
+    }
+    if sha:
+        payload["sha"] = sha
+    r = scraper.put(api_url, headers=headers, json=payload)
+    if r.status_code in [200, 201]:
+        print(f"âœ… طھظ… ط±ظپط¹ {filename}")
+    else:
+        print(f"â‌Œ ظپط´ظ„ ط±ظپط¹ {filename}: {r.status_code} {r.text}")
