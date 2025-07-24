@@ -121,7 +121,7 @@ def log_missing_anime(anime_title, episode_link):
 
 def update_new_json_list(anime_title, ep_data):
     new_json_url = f"https://abdo12249.github.io/1/test1/المشاهده.html?id={to_id_format(anime_title)}&episode={ep_data['number']}"
-    api_url = f"https://api.github.com/repos/{repo_name}/contents/test1/الجديد.json"
+    api_url = f"https://api.github.com/repos/{repo_name}/contents/test1/new2.json"
     headers = {"Authorization": f"token {access_token}"}
     response = scraper.get(api_url, headers=headers)
     sha = None
