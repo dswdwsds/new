@@ -195,12 +195,14 @@ for idx, link in enumerate(all_links):
     anime_name, episode_number, full_title, server_list = get_episode_data(link)
     if anime_name and server_list:
         filename, updated_data, status, ep_data = save_to_json(anime_name, episode_number, full_title, server_list)
-        if status in ["new", "update"]:
-            episodes_to_upload[filename] = updated_data
-            send_discord_notification(anime_name, episode_number, ep_data["link"], ep_data["image"])
-            if status == "new":
-                log_missing_anime(anime_name, ep_data["link"])
-                update_new_json_list(filename)
+        if status == "new":
+         episodes_to_upload[filename] = updated_data
+         send_discord_notification(anime_name, episode_number, ep_data["link"], ep_data["image"])
+         log_missing_anime(anime_name, ep_data["link"])
+         update_new_json_list(filename)
+        elif status == "update":
+          episodes_to_upload[filename] = updated_data
+
     else:
         print("❌ تخطيت الحلقة بسبب خطأ.")
     time.sleep(1)
