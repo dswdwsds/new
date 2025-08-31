@@ -54,9 +54,20 @@ def to_id_format(text):
     return text.replace(" ", "-")
 
 # --------------------
+# دالة لجلب الصفحة مع cookies من الصفحة الرئيسية
+# --------------------
+def fetch_with_cookies(url):
+    # افتح الصفحة الرئيسية الأول للحصول على cookies
+    home = scraper.get(BASE_URL, headers=HEADERS, allow_redirects=True)
+    cookies = home.cookies
+    # جلب الصفحة المطلوبة بنفس cookies
+    response = scraper.get(url, headers=HEADERS, cookies=cookies, allow_redirects=True)
+    return response
+
+# --------------------
 def get_episode_links():
     print("📄 تحميل صفحة الحلقات...")
-    response = scraper.get(EPISODE_LIST_URL, headers=HEADERS, allow_redirects=True)
+    response = fetch_with_cookies(EPISODE_LIST_URL)
     print("🔗 الرابط النهائي:", response.url, "status:", response.status_code)
     if response.status_code != 200:
         print("❌ فشل تحميل الصفحة")
@@ -65,9 +76,6 @@ def get_episode_links():
     return [a.get("href") for a in soup.select(".episodes-card-title a") if a.get("href", "").startswith("http")]
 
 # --------------------
-# باقي الكود زي ما هو
-# --------------------
-
 def check_episode_on_github(anime_title):
     anime_id = to_id_format(anime_title)
     filename = anime_id + ".json"
@@ -86,8 +94,9 @@ def check_episode_on_github(anime_title):
     else:
         return False, None
 
+# --------------------
 def get_episode_data(episode_url):
-    response = scraper.get(episode_url, headers=HEADERS, allow_redirects=True)
+    response = fetch_with_cookies(episode_url)
     if response.status_code != 200:
         return None, None, None, None
     soup = BeautifulSoup(response.text, "html.parser")
@@ -111,11 +120,10 @@ def get_episode_data(episode_url):
             servers.append({"serverName": name, "url": url})
     return anime_title, episode_number, full_title, servers
 
-# ... (باقي دوال log_missing_anime, update_new_json_list, save_to_json نفس كودك)
+# --------------------
+# باقي دوال log_missing_anime, update_new_json_list, save_to_json ...
+# --------------------
 
-# --------------------
-# التنفيذ
-# --------------------
 all_links = get_episode_links()
 episodes_to_upload = {}
 
