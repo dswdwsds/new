@@ -34,12 +34,13 @@ HEADERS = {
 scraper = cloudscraper.create_scraper()
 
 # --------------------
-# 🔹 جلب الدومين الجديد تلقائيًا
+# 🔹 جلب الدومين الجديد تلقائيًا (من anime4up.rest ثم يتحول إلى دومين حقيقي)
 # --------------------
 def get_base_url():
-    start_url = "https://4i.nxdwle.shop/episode/"  # أي دومين قديم كمفتاح
+    start_url = "https://anime4up.rest/episode/"
     r = scraper.get(start_url, headers=HEADERS, allow_redirects=True)
-    base = r.url.split("/")[0] + "//" + r.url.split("/")[2]
+    final_url = r.url
+    base = final_url.split("/")[0] + "//" + final_url.split("/")[2]
     print("🌐 الدومين المستخدم:", base)
     return base
 
@@ -54,20 +55,9 @@ def to_id_format(text):
     return text.replace(" ", "-")
 
 # --------------------
-# دالة لجلب الصفحة مع cookies من الصفحة الرئيسية
-# --------------------
-def fetch_with_cookies(url):
-    # افتح الصفحة الرئيسية الأول للحصول على cookies
-    home = scraper.get(BASE_URL, headers=HEADERS, allow_redirects=True)
-    cookies = home.cookies
-    # جلب الصفحة المطلوبة بنفس cookies
-    response = scraper.get(url, headers=HEADERS, cookies=cookies, allow_redirects=True)
-    return response
-
-# --------------------
 def get_episode_links():
     print("📄 تحميل صفحة الحلقات...")
-    response = fetch_with_cookies(EPISODE_LIST_URL)
+    response = scraper.get(EPISODE_LIST_URL, headers=HEADERS, allow_redirects=True)
     print("🔗 الرابط النهائي:", response.url, "status:", response.status_code)
     if response.status_code != 200:
         print("❌ فشل تحميل الصفحة")
@@ -94,9 +84,8 @@ def check_episode_on_github(anime_title):
     else:
         return False, None
 
-# --------------------
 def get_episode_data(episode_url):
-    response = fetch_with_cookies(episode_url)
+    response = scraper.get(episode_url, headers=HEADERS, allow_redirects=True)
     if response.status_code != 200:
         return None, None, None, None
     soup = BeautifulSoup(response.text, "html.parser")
@@ -121,9 +110,12 @@ def get_episode_data(episode_url):
     return anime_title, episode_number, full_title, servers
 
 # --------------------
-# باقي دوال log_missing_anime, update_new_json_list, save_to_json ...
+# (هنا تحط باقي الدوال زي log_missing_anime, update_new_json_list, save_to_json)
 # --------------------
 
+# --------------------
+# التنفيذ
+# --------------------
 all_links = get_episode_links()
 episodes_to_upload = {}
 
