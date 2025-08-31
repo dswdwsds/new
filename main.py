@@ -18,54 +18,27 @@ remote_folder = "test1/episodes"
 repo_name_log = "abdo12249/test"
 missing_anime_log_filename = "missing_anime_log.json"
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
-    "Referer": "https://google.com/",
-    "DNT": "1",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Sec-Fetch-User": "?1"
-}
+BASE_URL = "https://4i.nxdwle.shop"
+EPISODE_LIST_URL = BASE_URL + "/episode/"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 scraper = cloudscraper.create_scraper()
 
-# --------------------
-# 🔹 جلب الدومين الجديد تلقائيًا (من anime4up.rest ثم يتحول إلى دومين حقيقي)
-# --------------------
-def get_base_url():
-    start_url = "https://anime4up.rest/episode/"
-    r = scraper.get(start_url, headers=HEADERS, allow_redirects=True)
-    final_url = r.url
-    base = final_url.split("/")[0] + "//" + final_url.split("/")[2]
-    print("🌐 الدومين المستخدم:", base)
-    return base
-
-BASE_URL = get_base_url()
-EPISODE_LIST_URL = BASE_URL + "/episode/"
-
-# --------------------
 def to_id_format(text):
     text = text.strip().lower()
     text = text.replace(":", "")
     text = re.sub(r"[^a-z0-9()!\- ]", "", text)
     return text.replace(" ", "-")
 
-# --------------------
 def get_episode_links():
     print("📄 تحميل صفحة الحلقات...")
-    response = scraper.get(EPISODE_LIST_URL, headers=HEADERS, allow_redirects=True)
-    print("🔗 الرابط النهائي:", response.url, "status:", response.status_code)
+    response = scraper.get(EPISODE_LIST_URL, headers=HEADERS)
     if response.status_code != 200:
         print("❌ فشل تحميل الصفحة")
         return []
     soup = BeautifulSoup(response.text, "html.parser")
     return [a.get("href") for a in soup.select(".episodes-card-title a") if a.get("href", "").startswith("http")]
 
-# --------------------
 def check_episode_on_github(anime_title):
     anime_id = to_id_format(anime_title)
     filename = anime_id + ".json"
@@ -85,7 +58,7 @@ def check_episode_on_github(anime_title):
         return False, None
 
 def get_episode_data(episode_url):
-    response = scraper.get(episode_url, headers=HEADERS, allow_redirects=True)
+    response = scraper.get(episode_url, headers=HEADERS)
     if response.status_code != 200:
         return None, None, None, None
     soup = BeautifulSoup(response.text, "html.parser")
@@ -109,13 +82,110 @@ def get_episode_data(episode_url):
             servers.append({"serverName": name, "url": url})
     return anime_title, episode_number, full_title, servers
 
-# --------------------
-# (هنا تحط باقي الدوال زي log_missing_anime, update_new_json_list, save_to_json)
-# --------------------
+def log_missing_anime(anime_title, episode_link):
+    api_url = f"https://api.github.com/repos/{repo_name_log}/contents/{missing_anime_log_filename}"
+    headers = {"Authorization": f"token {access_token}"}
+    response = scraper.get(api_url, headers=headers)
+    log_data = []
+    sha = None
 
-# --------------------
+    if response.status_code == 200:
+        sha = response.json().get("sha")
+        try:
+            content_decoded = base64.b64decode(response.json().get("content")).decode("utf-8")
+            log_data = json.loads(content_decoded)
+        except:
+            log_data = []
+    elif response.status_code != 404:
+        return
+
+    new_entry = {
+        "anime_title": anime_title,
+        "episode_link": episode_link,
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    if not any(item.get("anime_title") == anime_title and item.get("episode_link") == episode_link for item in log_data):
+        log_data.append(new_entry)
+        content_to_upload = json.dumps(log_data, indent=2, ensure_ascii=False)
+        encoded_content = base64.b64encode(content_to_upload.encode("utf-8")).decode()
+        payload = {
+            "message": f"تحديث سجل الأنميات المفقودة: إضافة {anime_title}",
+            "content": encoded_content,
+            "branch": "main"
+        }
+        if sha:
+            payload["sha"] = sha
+        scraper.put(api_url, headers=headers, json=payload)
+
+def update_new_json_list(new_anime_filename):
+    new_json_url = f"https://abdo12249.github.io/1/test1/episodes/{new_anime_filename}"
+    api_url = f"https://api.github.com/repos/{repo_name}/contents/test1/الجديد.json"
+    headers = {"Authorization": f"token {access_token}"}
+    response = scraper.get(api_url, headers=headers)
+    sha = None
+    data = {"animes": []}
+
+    if response.status_code == 200:
+        sha = response.json().get("sha")
+        try:
+            content_decoded = base64.b64decode(response.json().get("content")).decode("utf-8")
+            data = json.loads(content_decoded)
+        except:
+            data = {"animes": []}
+
+    if new_json_url not in data["animes"]:
+        data["animes"].append(new_json_url)
+        content_to_upload = json.dumps(data, indent=2, ensure_ascii=False)
+        encoded_content = base64.b64encode(content_to_upload.encode()).decode()
+        payload = {
+            "message": f"تحديث ملف الجديد.json بإضافة {new_anime_filename}",
+            "content": encoded_content,
+            "branch": "main"
+        }
+        if sha:
+            payload["sha"] = sha
+        scraper.put(api_url, headers=headers, json=payload)
+
+def save_to_json(anime_title, episode_number, episode_title, servers):
+    anime_id = to_id_format(anime_title)
+    filename = anime_id + ".json"
+    exists_on_github, github_data = check_episode_on_github(anime_title)
+
+    ep_data = {
+        "number": int(episode_number) if episode_number.isdigit() else episode_number,
+        "title": f"الحلقة {episode_number}",
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "link": f"https://abdo12249.github.io/1/test1/المشاهده.html?id={anime_id}&episode={episode_number}",
+        "image": f"https://abdo12249.github.io/1/images/{anime_id}.webp",
+        "servers": servers
+    }
+
+    if not exists_on_github or github_data is None:
+        return filename, {
+            "animeTitle": anime_title,
+            "episodes": [ep_data]
+        }, "new", ep_data
+
+    updated = False
+    found = False
+    for i, ep in enumerate(github_data["episodes"]):
+        if str(ep["number"]) == str(ep_data["number"]):
+            found = True
+            if ep["servers"] != ep_data["servers"]:
+                github_data["episodes"][i] = ep_data
+                updated = True
+            break
+    if not found:
+        github_data["episodes"].append(ep_data)
+        updated = True
+
+    if updated:
+        return filename, github_data, "update", ep_data
+    else:
+        return None, None, "skip", None
+
 # التنفيذ
-# --------------------
 all_links = get_episode_links()
 episodes_to_upload = {}
 
