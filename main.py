@@ -19,7 +19,7 @@ remote_folder = "test1/episodes"
 repo_name_log = "abdo12249/test"
 missing_anime_log_filename = "missing_anime_log.json"
 
-BASE_URL = "https://4i.nxdwle.shop"
+BASE_URL = "https://4v.t6y7u8.shop/"
 EPISODE_LIST_URL = BASE_URL + "/episode/"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
