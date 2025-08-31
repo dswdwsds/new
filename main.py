@@ -1,4 +1,3 @@
-
 import cloudscraper
 from bs4 import BeautifulSoup
 import time
@@ -19,7 +18,7 @@ remote_folder = "test1/episodes"
 repo_name_log = "abdo12249/test"
 missing_anime_log_filename = "missing_anime_log.json"
 
-BASE_URL = "https://4v.t6y7u8.shop/"
+BASE_URL = "https://4i.nxdwle.shop"
 EPISODE_LIST_URL = BASE_URL + "/episode/"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
@@ -180,7 +179,6 @@ def save_to_json(anime_title, episode_number, episode_title, servers):
     if not found:
         github_data["episodes"].append(ep_data)
         updated = True
-        return filename, github_data, "new_episode", ep_data
 
     if updated:
         return filename, github_data, "update", ep_data
@@ -196,20 +194,12 @@ for idx, link in enumerate(all_links):
     anime_name, episode_number, full_title, server_list = get_episode_data(link)
     if anime_name and server_list:
         filename, updated_data, status, ep_data = save_to_json(anime_name, episode_number, full_title, server_list)
-    if status == "new":
-        episodes_to_upload[filename] = updated_data
-        send_discord_notification(anime_name, episode_number, ep_data["link"], ep_data["image"])
-        log_missing_anime(anime_name, ep_data["link"])
-        update_new_json_list(filename)
-
-    elif status == "new_episode":
-        episodes_to_upload[filename] = updated_data
-        send_discord_notification(anime_name, episode_number, ep_data["link"], ep_data["image"])
-
-    elif status == "update":
-        episodes_to_upload[filename] = updated_data
-        # هنا مفيش إشعار، لأنه مجرد تعديل سيرفرات
-
+        if status in ["new", "update"]:
+            episodes_to_upload[filename] = updated_data
+            send_discord_notification(anime_name, episode_number, ep_data["link"], ep_data["image"])
+            if status == "new":
+                log_missing_anime(anime_name, ep_data["link"])
+                update_new_json_list(filename)
     else:
         print("❌ تخطيت الحلقة بسبب خطأ.")
     time.sleep(1)
