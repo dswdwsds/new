@@ -4,7 +4,7 @@ import re
 import json
 import base64
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
 # إعدادات GitHub
 access_token = os.getenv("ACCESS_TOKEN")
@@ -13,17 +13,23 @@ remote_path = "test1/animes.json"
 
 scraper = cloudscraper.create_scraper()
 
-def extract_anime_id_from_episode_url(episode_url):
-    path = urlparse(episode_url).path
-    last_part = path.strip("/").split("/")[-1]
-    anime_id = re.sub(r"-الحلقة-[0-9]+", "", last_part)
-    return anime_id
+# ========== استخراج anime_id من رابط "المشاهده.html" ==========
+def extract_anime_id_from_custom_link(link):
+    try:
+        query = parse_qs(urlparse(link).query)
+        anime_id = query.get("id", [""])[0]
+        if anime_id:
+            anime_id = re.sub(r"--?\d+$", "", anime_id)  # إزالة رقم الحلقة من النهاية إن وجد
+        return anime_id
+    except Exception as e:
+        print(f"❌ خطأ أثناء تحليل الرابط: {e}")
+        return ""
 
-def fetch_anime_info_from_url(episode_url):
-    anime_id = extract_anime_id_from_episode_url(episode_url)
+# ========== جلب بيانات الأنمي ==========
+def fetch_anime_info_from_id(anime_id):
     anime_url = f"https://4d.qerxam.shop/anime/{anime_id}/"
-
     print(f"📥 فتح الصفحة: {anime_url}")
+
     response = scraper.get(anime_url)
     if response.status_code != 200:
         print("❌ فشل تحميل الصفحة")
@@ -70,11 +76,11 @@ def fetch_anime_info_from_url(episode_url):
         }
     }
 
+# ========== رفع البيانات إلى GitHub ==========
 def upload_to_github(anime_data):
     api_url = f"https://api.github.com/repos/{repo_name}/contents/{remote_path}"
     headers = {"Authorization": f"token {access_token}"}
 
-    # جلب الملف الحالي
     response = scraper.get(api_url, headers=headers)
     current_data = {}
     sha = None
@@ -86,14 +92,12 @@ def upload_to_github(anime_data):
             current_data = json.loads(content_decoded)
         except Exception as e:
             print("⚠️ فشل قراءة animes.json:", str(e))
-            current_data = {}
     elif response.status_code == 404:
-        print("📁 سيتم إنشاء ملف animes.json جديد.")
+        print("📁 سيتم إنشاء ملف جديد animes.json.")
     else:
-        print("❌ خطأ غير متوقع أثناء جلب animes.json:", response.status_code)
+        print("❌ خطأ أثناء جلب animes.json:", response.status_code)
         return
 
-    # تحديث البيانات
     updated = False
     for anime_id, info in anime_data.items():
         if anime_id not in current_data:
@@ -101,13 +105,12 @@ def upload_to_github(anime_data):
             current_data[anime_id] = info
             updated = True
         else:
-            print(f"ℹ️ الأنمي موجود مسبقًا: {anime_id} (تم التخطي)")
+            print(f"ℹ️ الأنمي موجود مسبقًا: {anime_id}")
 
     if not updated:
         print("✅ لا توجد بيانات جديدة لإضافتها.")
         return
 
-    # تجهيز المحتوى للرفع
     new_content = json.dumps(current_data, ensure_ascii=False, indent=2)
     encoded_content = base64.b64encode(new_content.encode()).decode()
 
@@ -125,9 +128,29 @@ def upload_to_github(anime_data):
     else:
         print("❌ فشل رفع animes.json:", put_response.status_code, put_response.text)
 
-# ========= التنفيذ =========
-episode_url = "https://4d.qerxam.shop/episode/bullet-bullet-%d8%a7%d9%84%d8%ad%d9%84%d9%82%d8%a9-7/"
-anime_info = fetch_anime_info_from_url(episode_url)
+# ========== التنفيذ ==========
+def main():
+    if not os.path.exists("missing_anime_log.json"):
+        print("❌ الملف missing_anime_log.json غير موجود!")
+        return
 
-if anime_info:
-    upload_to_github(anime_info)
+    with open("missing_anime_log.json", "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    processed_ids = set()
+
+    for entry in data:
+        episode_link = entry.get("episode_link", "")
+        anime_id = extract_anime_id_from_custom_link(episode_link)
+        if not anime_id or anime_id in processed_ids:
+            continue
+
+        anime_info = fetch_anime_info_from_id(anime_id)
+        if anime_info:
+            upload_to_github(anime_info)
+            processed_ids.add(anime_id)
+
+    print("🎉 تم إنهاء المعالجة.")
+
+if __name__ == "__main__":
+    main()
