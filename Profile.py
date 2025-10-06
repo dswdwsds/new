@@ -10,6 +10,7 @@ from urllib.parse import urlparse, parse_qs
 access_token = os.getenv("ACCESS_TOKEN")
 repo_name = "abdo12249/1"
 remote_path = "test1/animes.json"
+remote_path2 = "test/missing_anime_log.json"  # الملف اللي فيه روابط الأنميات المفقودة
 
 scraper = cloudscraper.create_scraper()
 
@@ -19,7 +20,7 @@ def extract_anime_id_from_custom_link(link):
         query = parse_qs(urlparse(link).query)
         anime_id = query.get("id", [""])[0]
         if anime_id:
-            anime_id = re.sub(r"--?\d+$", "", anime_id)  # إزالة رقم الحلقة من النهاية إن وجد
+            anime_id = re.sub(r"--?\d+$", "", anime_id)
         return anime_id
     except Exception as e:
         print(f"❌ خطأ أثناء تحليل الرابط: {e}")
@@ -49,7 +50,6 @@ def fetch_anime_info_from_id(anime_id):
         except:
             return ""
 
-    # استخراج البيانات
     title = get_text('//div[@class="anime-details"]/h1')
     description = get_text('//div[@class="anime-details"]/p')
     image = get_attr('//div[@class="anime-cover"]/img', 'src')
@@ -128,14 +128,33 @@ def upload_to_github(anime_data):
     else:
         print("❌ فشل رفع animes.json:", put_response.status_code, put_response.text)
 
+# ========== تحميل missing_anime_log.json من GitHub ==========
+def fetch_missing_log_from_github():
+    api_url = f"https://api.github.com/repos/{repo_name}/contents/{remote_path2}"
+    headers = {"Authorization": f"token {access_token}"}
+    response = scraper.get(api_url, headers=headers)
+
+    if response.status_code != 200:
+        print("❌ فشل تحميل missing_anime_log.json من GitHub:", response.status_code)
+        return []
+
+    try:
+        content_decoded = base64.b64decode(response.json()["content"]).decode("utf-8").strip()
+        if not content_decoded:
+            print("⚠️ الملف missing_anime_log.json فارغ.")
+            return []
+        data = json.loads(content_decoded)
+        return data
+    except Exception as e:
+        print("❌ خطأ في قراءة missing_anime_log.json:", str(e))
+        return []
+
 # ========== التنفيذ ==========
 def main():
-    if not os.path.exists("missing_anime_log.json"):
-        print("❌ الملف missing_anime_log.json غير موجود!")
+    data = fetch_missing_log_from_github()
+    if not data:
+        print("⚠️ لم يتم العثور على بيانات في missing_anime_log.json")
         return
-
-    with open("missing_anime_log.json", "r", encoding="utf-8") as f:
-        data = json.load(f)
 
     processed_ids = set()
 
