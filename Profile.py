@@ -1,42 +1,71 @@
+# Profile.py
 import cloudscraper
 from lxml import html
 import re
 import json
 import base64
 import os
-from urllib.parse import urlparse, parse_qs
+import time
+from urllib.parse import urlparse, parse_qs, quote
 
-# إعدادات GitHub
-access_token = os.getenv("ACCESS_TOKEN")
-repo_name = "abdo12249/1"
-remote_path = "test1/animes.json"
-remote_path2 = "test/missing_anime_log.json"  # الملف اللي فيه روابط الأنميات المفقودة
+# ----------- إعدادات (عدّلها لو تحب) -----------
+ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")  # لازم يكون PAT عندك للرفع على الريبو الهدف
+INPUT_REPO = "abdo12249/test"             # مكان missing_anime_log.json الصحيح
+INPUT_PATH = "missing_anime_log.json"
+OUTPUT_REPO = "abdo12249/1"               # الريبو اللي هنرفع فيه animes.json
+OUTPUT_PATH = "test1/animes.json"
+BRANCH = "main"
+SLEEP_BETWEEN_FETCHES = 0.6               # لتخفيف الضغط على السيرفر
+# ------------------------------------------------
 
 scraper = cloudscraper.create_scraper()
+headers = {"Authorization": f"token {ACCESS_TOKEN}"} if ACCESS_TOKEN else {}
 
-# ========== استخراج anime_id من رابط "المشاهده.html" ==========
+def fetch_file_from_github(repo, path):
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
+    resp = scraper.get(api_url, headers=headers)
+    if resp.status_code == 200:
+        j = resp.json()
+        content_b64 = j.get("content", "")
+        try:
+            decoded = base64.b64decode(content_b64).decode("utf-8")
+        except Exception as e:
+            print("❌ خطأ فك ترميز المحتوى:", e)
+            return None, None
+        return decoded, j.get("sha")
+    elif resp.status_code == 404:
+        print(f"❌ 404 — الملف '{path}' غير موجود في الريبو '{repo}'.")
+        return None, None
+    else:
+        print(f"❌ خطأ {resp.status_code} عند جلب {repo}/{path}: {resp.text}")
+        return None, None
+
 def extract_anime_id_from_custom_link(link):
     try:
         query = parse_qs(urlparse(link).query)
-        anime_id = query.get("id", [""])[0]
-        if anime_id:
-            anime_id = re.sub(r"--?\d+$", "", anime_id)
+        anime_id = query.get("id", [""])[0].strip()
+        # إزالة رقم الحلقة المتواجد في آخر الـ id مثل: name--2 أو name-2
+        anime_id = re.sub(r'(?:--|-)\d+$', '', anime_id)
         return anime_id
     except Exception as e:
-        print(f"❌ خطأ أثناء تحليل الرابط: {e}")
+        print("❌ خطأ أثناء تحليل الرابط:", e)
         return ""
 
-# ========== جلب بيانات الأنمي ==========
 def fetch_anime_info_from_id(anime_id):
-    anime_url = f"https://4d.qerxam.shop/anime/{anime_id}/"
-    print(f"📥 فتح الصفحة: {anime_url}")
-
-    response = scraper.get(anime_url)
-    if response.status_code != 200:
-        print("❌ فشل تحميل الصفحة")
+    slug = quote(anime_id, safe='')
+    anime_url = f"https://4d.qerxam.shop/anime/{slug}/"
+    print(f"📥 جلب: {anime_url}")
+    try:
+        resp = scraper.get(anime_url)
+    except Exception as e:
+        print("❌ خطأ طلب الصفحة:", e)
         return None
 
-    tree = html.fromstring(response.content)
+    if resp.status_code != 200:
+        print(f"⚠️ الصفحة رجعت status {resp.status_code} — تخطي {anime_id}")
+        return None
+
+    tree = html.fromstring(resp.content)
 
     def get_text(xpath):
         try:
@@ -76,100 +105,87 @@ def fetch_anime_info_from_id(anime_id):
         }
     }
 
-# ========== رفع البيانات إلى GitHub ==========
-def upload_to_github(anime_data):
-    api_url = f"https://api.github.com/repos/{repo_name}/contents/{remote_path}"
-    headers = {"Authorization": f"token {access_token}"}
-
-    response = scraper.get(api_url, headers=headers)
+def merge_and_upload_batch(new_items):
+    # جلب animes.json الحالية من الريبو الهدف
+    existing_raw, existing_sha = fetch_file_from_github(OUTPUT_REPO, OUTPUT_PATH)
     current_data = {}
-    sha = None
-
-    if response.status_code == 200:
+    if existing_raw:
         try:
-            sha = response.json()["sha"]
-            content_decoded = base64.b64decode(response.json()["content"]).decode("utf-8")
-            current_data = json.loads(content_decoded)
+            current_data = json.loads(existing_raw)
         except Exception as e:
-            print("⚠️ فشل قراءة animes.json:", str(e))
-    elif response.status_code == 404:
-        print("📁 سيتم إنشاء ملف جديد animes.json.")
-    else:
-        print("❌ خطأ أثناء جلب animes.json:", response.status_code)
-        return
+            print("⚠️ فشل قراءة animes.json الموجودة (سيتم استخدام فارغ):", e)
+            current_data = {}
 
-    updated = False
-    for anime_id, info in anime_data.items():
+    added = 0
+    for anime_id, info in new_items.items():
         if anime_id not in current_data:
-            print(f"➕ إضافة أنمي جديد: {anime_id}")
             current_data[anime_id] = info
-            updated = True
+            added += 1
         else:
-            print(f"ℹ️ الأنمي موجود مسبقًا: {anime_id}")
+            print(f"ℹ️ متواجد مسبقًا، تخطي: {anime_id}")
 
-    if not updated:
-        print("✅ لا توجد بيانات جديدة لإضافتها.")
+    if added == 0:
+        print("✅ لا توجد أنميات جديدة ليتم إضافتها.")
         return
 
     new_content = json.dumps(current_data, ensure_ascii=False, indent=2)
-    encoded_content = base64.b64encode(new_content.encode()).decode()
+    encoded = base64.b64encode(new_content.encode()).decode()
 
     payload = {
-        "message": "تحديث animes.json بإضافة أنمي جديد",
-        "content": encoded_content,
-        "branch": "main"
+        "message": f"تحديث animes.json — إضافة {added} أنميات",
+        "content": encoded,
+        "branch": BRANCH
     }
-    if sha:
-        payload["sha"] = sha
+    if existing_sha:
+        payload["sha"] = existing_sha
 
-    put_response = scraper.put(api_url, headers=headers, json=payload)
-    if put_response.status_code in [200, 201]:
-        print("✅ تم رفع animes.json بنجاح.")
+    put_url = f"https://api.github.com/repos/{OUTPUT_REPO}/contents/{OUTPUT_PATH}"
+    resp = scraper.put(put_url, headers=headers, json=payload)
+    if resp.status_code in (200, 201):
+        print(f"✅ تم رفع animes.json بنجاح — أضيفت {added} أنميات.")
     else:
-        print("❌ فشل رفع animes.json:", put_response.status_code, put_response.text)
+        print("❌ فشل الرفع:", resp.status_code, resp.text)
 
-# ========== تحميل missing_anime_log.json من GitHub ==========
-def fetch_missing_log_from_github():
-    api_url = f"https://api.github.com/repos/{repo_name}/contents/{remote_path2}"
-    headers = {"Authorization": f"token {access_token}"}
-    response = scraper.get(api_url, headers=headers)
-
-    if response.status_code != 200:
-        print("❌ فشل تحميل missing_anime_log.json من GitHub:", response.status_code)
-        return []
-
-    try:
-        content_decoded = base64.b64decode(response.json()["content"]).decode("utf-8").strip()
-        if not content_decoded:
-            print("⚠️ الملف missing_anime_log.json فارغ.")
-            return []
-        data = json.loads(content_decoded)
-        return data
-    except Exception as e:
-        print("❌ خطأ في قراءة missing_anime_log.json:", str(e))
-        return []
-
-# ========== التنفيذ ==========
 def main():
-    data = fetch_missing_log_from_github()
-    if not data:
-        print("⚠️ لم يتم العثور على بيانات في missing_anime_log.json")
+    if not ACCESS_TOKEN:
+        print("⚠️ تحذير: لم يتم توفير ACCESS_TOKEN عبر متغير البيئة. القراءة من الريبو العام ممكنة، لكن الرفع يتطلب توكن مع صلاحية repo.")
+    # جلب ملف missing_anime_log.json من الريبو الصحيح
+    raw, _ = fetch_file_from_github(INPUT_REPO, INPUT_PATH)
+    if not raw:
+        print("⚠️ لم يتم العثور على بيانات في missing_anime_log.json أو فشل تحميله.")
         return
 
-    processed_ids = set()
+    try:
+        data = json.loads(raw)
+    except Exception as e:
+        print("❌ فشل تحويل محتوى missing_anime_log.json إلى JSON:", e)
+        return
+
+    processed = set()
+    collected = {}
 
     for entry in data:
         episode_link = entry.get("episode_link", "")
         anime_id = extract_anime_id_from_custom_link(episode_link)
-        if not anime_id or anime_id in processed_ids:
+        if not anime_id:
+            print("⚠️ لم استخرج id من الرابط:", episode_link)
+            continue
+        if anime_id in processed:
             continue
 
-        anime_info = fetch_anime_info_from_id(anime_id)
-        if anime_info:
-            upload_to_github(anime_info)
-            processed_ids.add(anime_id)
+        info = fetch_anime_info_from_id(anime_id)
+        if info:
+            collected.update(info)
+            processed.add(anime_id)
+        time.sleep(SLEEP_BETWEEN_FETCHES)
 
-    print("🎉 تم إنهاء المعالجة.")
+    if not collected:
+        print("⚠️ لا توجد أنميات صالحة للمعالجة.")
+        return
+
+    # رفع دفعة واحدة (أسرع وأوفر لطلبات API)
+    merge_and_upload_batch(collected)
+    print("🎉 انتهت المعالجة.")
 
 if __name__ == "__main__":
     main()
