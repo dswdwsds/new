@@ -22,34 +22,40 @@ scraper = cloudscraper.create_scraper()
 headers = {"Authorization": f"token {ACCESS_TOKEN}"} if ACCESS_TOKEN else {}
 
 def fetch_file_from_github(repo, path):
+    # نحاول أولاً عبر raw.githubusercontent.com
+    raw_url = f"https://raw.githubusercontent.com/{repo}/main/{path}"
+    try:
+        raw_resp = scraper.get(raw_url)
+        if raw_resp.status_code == 200:
+            print(f"✅ تم جلب {path} عبر raw.githubusercontent.com ({len(raw_resp.text)} bytes)")
+            return raw_resp.text, None  # لا نحتاج SHA هنا
+    except Exception as e:
+        print("⚠️ فشل الجلب عبر raw:", e)
+
+    # لو فشل أو الملف غير موجود، نستخدم GitHub API كبديل
     api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
     resp = scraper.get(api_url, headers=headers)
     if resp.status_code == 200:
         j = resp.json()
         content_b64 = j.get("content", "")
-        try:
-            decoded = base64.b64decode(content_b64).decode("utf-8")
-        except Exception as e:
-            print("❌ خطأ فك ترميز المحتوى:", e)
+        encoding = j.get("encoding", "")
+        if encoding == "base64" and content_b64:
+            try:
+                decoded = base64.b64decode(content_b64).decode("utf-8")
+                print(f"✅ تم جلب {path} عبر GitHub API (Base64)")
+                return decoded, j.get("sha")
+            except Exception as e:
+                print("❌ خطأ فك ترميز المحتوى:", e)
+                return None, None
+        elif encoding == "none" or not content_b64:
+            print(f"⚠️ الملف كبير جدًا أو فارغ (encoding=none) — استخدم رابط raw بدلاً من API")
             return None, None
-        return decoded, j.get("sha")
     elif resp.status_code == 404:
         print(f"❌ 404 — الملف '{path}' غير موجود في الريبو '{repo}'.")
         return None, None
     else:
         print(f"❌ خطأ {resp.status_code} عند جلب {repo}/{path}: {resp.text}")
         return None, None
-
-def extract_anime_id_from_custom_link(link):
-    try:
-        query = parse_qs(urlparse(link).query)
-        anime_id = query.get("id", [""])[0].strip()
-        # إزالة رقم الحلقة المتواجد في آخر الـ id مثل: name--2 أو name-2
-        anime_id = re.sub(r'(?:--|-)\d+$', '', anime_id)
-        return anime_id
-    except Exception as e:
-        print("❌ خطأ أثناء تحليل الرابط:", e)
-        return ""
 
 def fetch_anime_info_from_id(anime_id):
     slug = quote(anime_id, safe='')
