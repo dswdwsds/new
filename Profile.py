@@ -21,40 +21,30 @@ SLEEP_BETWEEN_FETCHES = 0.6               # لتخفيف الضغط على ال�
 scraper = cloudscraper.create_scraper()
 headers = {"Authorization": f"token {ACCESS_TOKEN}"} if ACCESS_TOKEN else {}
 
-# ------------------- دوال مساعدة -------------------
-
 def fetch_file_from_github(repo, path):
-    """يحاول جلب الملف من GitHub API مع SHA"""
-    api_url = f"https://api.github.com/repos/{repo}/contents/{path}?ref={BRANCH}"
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
     resp = scraper.get(api_url, headers=headers)
     if resp.status_code == 200:
         j = resp.json()
         content_b64 = j.get("content", "")
-        encoding = j.get("encoding", "")
-        sha = j.get("sha")
-        if encoding == "base64" and content_b64:
-            try:
-                decoded = base64.b64decode(content_b64).decode("utf-8")
-                print(f"✅ تم جلب {path} عبر GitHub API ({len(decoded)} bytes)")
-                return decoded, sha
-            except Exception as e:
-                print("❌ خطأ فك ترميز المحتوى:", e)
-                return None, None
-        elif encoding == "none" or not content_b64:
-            print(f"⚠️ الملف كبير جدًا أو فارغ (encoding=none)")
-            return None, sha
+        try:
+            decoded = base64.b64decode(content_b64).decode("utf-8")
+        except Exception as e:
+            print("❌ خطأ فك ترميز المحتوى:", e)
+            return None, None
+        return decoded, j.get("sha")
     elif resp.status_code == 404:
-        print(f"⚠️ الملف '{path}' غير موجود في الريبو '{repo}'.")
+        print(f"❌ 404 — الملف '{path}' غير موجود في الريبو '{repo}'.")
         return None, None
     else:
         print(f"❌ خطأ {resp.status_code} عند جلب {repo}/{path}: {resp.text}")
         return None, None
 
 def extract_anime_id_from_custom_link(link):
-    """يستخرج anime_id من الرابط المخصص"""
     try:
         query = parse_qs(urlparse(link).query)
         anime_id = query.get("id", [""])[0].strip()
+        # إزالة رقم الحلقة المتواجد في آخر الـ id مثل: name--2 أو name-2
         anime_id = re.sub(r'(?:--|-)\d+$', '', anime_id)
         return anime_id
     except Exception as e:
@@ -62,7 +52,6 @@ def extract_anime_id_from_custom_link(link):
         return ""
 
 def fetch_anime_info_from_id(anime_id):
-    """يجلب معلومات الأنمي من الموقع"""
     slug = quote(anime_id, safe='')
     anime_url = f"https://4d.qerxam.shop/anime/{slug}/"
     print(f"📥 جلب: {anime_url}")
@@ -117,7 +106,6 @@ def fetch_anime_info_from_id(anime_id):
     }
 
 def merge_and_upload_batch(new_items):
-    """يمزج البيانات الجديدة مع القديم ويرفع التحديث على GitHub"""
     existing_raw, existing_sha = fetch_file_from_github(OUTPUT_REPO, OUTPUT_PATH)
     current_data = {}
 
@@ -125,8 +113,11 @@ def merge_and_upload_batch(new_items):
         try:
             current_data = json.loads(existing_raw)
         except Exception as e:
-            print("⚠️ فشل قراءة animes.json القديمة، سيتم استخدام فارغ:", e)
+            print("⚠️ فشل قراءة animes.json الموجودة (سيتم استخدام فارغ):", e)
             current_data = {}
+    else:
+        print("⚠️ لم أستطع تحميل animes.json القديم — لن أرفع أي تحديث لتجنب حذف البيانات.")
+        return  # <-- مهم جدًا لتجنب الكتابة الفارغة
 
     added = 0
     for anime_id, info in new_items.items():
@@ -149,7 +140,7 @@ def merge_and_upload_batch(new_items):
         "branch": BRANCH
     }
     if existing_sha:
-        payload["sha"] = existing_sha  # مهم لتجنب 422
+        payload["sha"] = existing_sha
 
     put_url = f"https://api.github.com/repos/{OUTPUT_REPO}/contents/{OUTPUT_PATH}"
     resp = scraper.put(put_url, headers=headers, json=payload)
@@ -158,12 +149,10 @@ def merge_and_upload_batch(new_items):
     else:
         print("❌ فشل الرفع:", resp.status_code, resp.text)
 
-# ------------------- البرنامج الرئيسي -------------------
 
 def main():
     if not ACCESS_TOKEN:
-        print("⚠️ تحذير: لم يتم توفير ACCESS_TOKEN عبر متغير البيئة. الرفع يتطلب توكن مع صلاحية repo.")
-
+        print("⚠️ تحذير: لم يتم توفير ACCESS_TOKEN عبر متغير البيئة. القراءة من الريبو العام ممكنة، لكن الرفع يتطلب توكن مع صلاحية repo.")
     # جلب ملف missing_anime_log.json من الريبو الصحيح
     raw, _ = fetch_file_from_github(INPUT_REPO, INPUT_PATH)
     if not raw:
