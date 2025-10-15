@@ -21,6 +21,7 @@ SLEEP_BETWEEN_FETCHES = 0.6               # لتخفيف الضغط على ال�
 scraper = cloudscraper.create_scraper()
 headers = {"Authorization": f"token {ACCESS_TOKEN}"} if ACCESS_TOKEN else {}
 
+# ------------------- دوال -------------------
 def fetch_file_from_github(repo, path):
     # نحاول أولاً عبر raw.githubusercontent.com
     raw_url = f"https://raw.githubusercontent.com/{repo}/main/{path}"
@@ -56,6 +57,17 @@ def fetch_file_from_github(repo, path):
     else:
         print(f"❌ خطأ {resp.status_code} عند جلب {repo}/{path}: {resp.text}")
         return None, None
+
+def extract_anime_id_from_custom_link(link):
+    try:
+        query = parse_qs(urlparse(link).query)
+        anime_id = query.get("id", [""])[0].strip()
+        # إزالة رقم الحلقة المتواجد في آخر الـ id مثل: name--2 أو name-2
+        anime_id = re.sub(r'(?:--|-)\d+$', '', anime_id)
+        return anime_id
+    except Exception as e:
+        print("❌ خطأ أثناء تحليل الرابط:", e)
+        return ""
 
 def fetch_anime_info_from_id(anime_id):
     slug = quote(anime_id, safe='')
@@ -123,7 +135,7 @@ def merge_and_upload_batch(new_items):
             current_data = {}
     else:
         print("⚠️ لم أستطع تحميل animes.json القديم — لن أرفع أي تحديث لتجنب حذف البيانات.")
-        return  # <-- مهم جدًا لتجنب الكتابة الفارغة
+        return
 
     added = 0
     for anime_id, info in new_items.items():
@@ -155,11 +167,11 @@ def merge_and_upload_batch(new_items):
     else:
         print("❌ فشل الرفع:", resp.status_code, resp.text)
 
-
+# ------------------- Main -------------------
 def main():
     if not ACCESS_TOKEN:
         print("⚠️ تحذير: لم يتم توفير ACCESS_TOKEN عبر متغير البيئة. القراءة من الريبو العام ممكنة، لكن الرفع يتطلب توكن مع صلاحية repo.")
-    # جلب ملف missing_anime_log.json من الريبو الصحيح
+
     raw, _ = fetch_file_from_github(INPUT_REPO, INPUT_PATH)
     if not raw:
         print("⚠️ لم يتم العثور على بيانات في missing_anime_log.json أو فشل تحميله.")
@@ -193,7 +205,6 @@ def main():
         print("⚠️ لا توجد أنميات صالحة للمعالجة.")
         return
 
-    # رفع دفعة واحدة (أسرع وأوفر لطلبات API)
     merge_and_upload_batch(collected)
     print("🎉 انتهت المعالجة.")
 
