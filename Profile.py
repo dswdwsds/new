@@ -106,15 +106,18 @@ def fetch_anime_info_from_id(anime_id):
     }
 
 def merge_and_upload_batch(new_items):
-    # جلب animes.json الحالية من الريبو الهدف
     existing_raw, existing_sha = fetch_file_from_github(OUTPUT_REPO, OUTPUT_PATH)
     current_data = {}
+
     if existing_raw:
         try:
             current_data = json.loads(existing_raw)
         except Exception as e:
             print("⚠️ فشل قراءة animes.json الموجودة (سيتم استخدام فارغ):", e)
             current_data = {}
+    else:
+        print("⚠️ لم أستطع تحميل animes.json القديم — لن أرفع أي تحديث لتجنب حذف البيانات.")
+        return  # <-- مهم جدًا لتجنب الكتابة الفارغة
 
     added = 0
     for anime_id, info in new_items.items():
@@ -145,6 +148,7 @@ def merge_and_upload_batch(new_items):
         print(f"✅ تم رفع animes.json بنجاح — أضيفت {added} أنميات.")
     else:
         print("❌ فشل الرفع:", resp.status_code, resp.text)
+
 
 def main():
     if not ACCESS_TOKEN:
