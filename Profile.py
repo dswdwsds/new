@@ -21,48 +21,40 @@ SLEEP_BETWEEN_FETCHES = 0.6               # لتخفيف الضغط على ال�
 scraper = cloudscraper.create_scraper()
 headers = {"Authorization": f"token {ACCESS_TOKEN}"} if ACCESS_TOKEN else {}
 
-# ------------------- دوال -------------------
-def fetch_file_from_github(repo, path):
-    # نحاول أولاً عبر raw.githubusercontent.com
-    raw_url = f"https://raw.githubusercontent.com/{repo}/main/{path}"
-    try:
-        raw_resp = scraper.get(raw_url)
-        if raw_resp.status_code == 200:
-            print(f"✅ تم جلب {path} عبر raw.githubusercontent.com ({len(raw_resp.text)} bytes)")
-            return raw_resp.text, None  # لا نحتاج SHA هنا
-    except Exception as e:
-        print("⚠️ فشل الجلب عبر raw:", e)
+# ------------------- دوال مساعدة -------------------
 
-    # لو فشل أو الملف غير موجود، نستخدم GitHub API كبديل
-    api_url = f"https://api.github.com/repos/{repo}/contents/{path}"
+def fetch_file_from_github(repo, path):
+    """يحاول جلب الملف من GitHub API مع SHA"""
+    api_url = f"https://api.github.com/repos/{repo}/contents/{path}?ref={BRANCH}"
     resp = scraper.get(api_url, headers=headers)
     if resp.status_code == 200:
         j = resp.json()
         content_b64 = j.get("content", "")
         encoding = j.get("encoding", "")
+        sha = j.get("sha")
         if encoding == "base64" and content_b64:
             try:
                 decoded = base64.b64decode(content_b64).decode("utf-8")
-                print(f"✅ تم جلب {path} عبر GitHub API (Base64)")
-                return decoded, j.get("sha")
+                print(f"✅ تم جلب {path} عبر GitHub API ({len(decoded)} bytes)")
+                return decoded, sha
             except Exception as e:
                 print("❌ خطأ فك ترميز المحتوى:", e)
                 return None, None
         elif encoding == "none" or not content_b64:
-            print(f"⚠️ الملف كبير جدًا أو فارغ (encoding=none) — استخدم رابط raw بدلاً من API")
-            return None, None
+            print(f"⚠️ الملف كبير جدًا أو فارغ (encoding=none)")
+            return None, sha
     elif resp.status_code == 404:
-        print(f"❌ 404 — الملف '{path}' غير موجود في الريبو '{repo}'.")
+        print(f"⚠️ الملف '{path}' غير موجود في الريبو '{repo}'.")
         return None, None
     else:
         print(f"❌ خطأ {resp.status_code} عند جلب {repo}/{path}: {resp.text}")
         return None, None
 
 def extract_anime_id_from_custom_link(link):
+    """يستخرج anime_id من الرابط المخصص"""
     try:
         query = parse_qs(urlparse(link).query)
         anime_id = query.get("id", [""])[0].strip()
-        # إزالة رقم الحلقة المتواجد في آخر الـ id مثل: name--2 أو name-2
         anime_id = re.sub(r'(?:--|-)\d+$', '', anime_id)
         return anime_id
     except Exception as e:
@@ -70,6 +62,7 @@ def extract_anime_id_from_custom_link(link):
         return ""
 
 def fetch_anime_info_from_id(anime_id):
+    """يجلب معلومات الأنمي من الموقع"""
     slug = quote(anime_id, safe='')
     anime_url = f"https://4d.qerxam.shop/anime/{slug}/"
     print(f"📥 جلب: {anime_url}")
@@ -124,6 +117,7 @@ def fetch_anime_info_from_id(anime_id):
     }
 
 def merge_and_upload_batch(new_items):
+    """يمزج البيانات الجديدة مع القديم ويرفع التحديث على GitHub"""
     existing_raw, existing_sha = fetch_file_from_github(OUTPUT_REPO, OUTPUT_PATH)
     current_data = {}
 
@@ -131,11 +125,8 @@ def merge_and_upload_batch(new_items):
         try:
             current_data = json.loads(existing_raw)
         except Exception as e:
-            print("⚠️ فشل قراءة animes.json الموجودة (سيتم استخدام فارغ):", e)
+            print("⚠️ فشل قراءة animes.json القديمة، سيتم استخدام فارغ:", e)
             current_data = {}
-    else:
-        print("⚠️ لم أستطع تحميل animes.json القديم — لن أرفع أي تحديث لتجنب حذف البيانات.")
-        return
 
     added = 0
     for anime_id, info in new_items.items():
@@ -158,7 +149,7 @@ def merge_and_upload_batch(new_items):
         "branch": BRANCH
     }
     if existing_sha:
-        payload["sha"] = existing_sha
+        payload["sha"] = existing_sha  # مهم لتجنب 422
 
     put_url = f"https://api.github.com/repos/{OUTPUT_REPO}/contents/{OUTPUT_PATH}"
     resp = scraper.put(put_url, headers=headers, json=payload)
@@ -167,11 +158,13 @@ def merge_and_upload_batch(new_items):
     else:
         print("❌ فشل الرفع:", resp.status_code, resp.text)
 
-# ------------------- Main -------------------
+# ------------------- البرنامج الرئيسي -------------------
+
 def main():
     if not ACCESS_TOKEN:
-        print("⚠️ تحذير: لم يتم توفير ACCESS_TOKEN عبر متغير البيئة. القراءة من الريبو العام ممكنة، لكن الرفع يتطلب توكن مع صلاحية repo.")
+        print("⚠️ تحذير: لم يتم توفير ACCESS_TOKEN عبر متغير البيئة. الرفع يتطلب توكن مع صلاحية repo.")
 
+    # جلب ملف missing_anime_log.json من الريبو الصحيح
     raw, _ = fetch_file_from_github(INPUT_REPO, INPUT_PATH)
     if not raw:
         print("⚠️ لم يتم العثور على بيانات في missing_anime_log.json أو فشل تحميله.")
@@ -205,6 +198,7 @@ def main():
         print("⚠️ لا توجد أنميات صالحة للمعالجة.")
         return
 
+    # رفع دفعة واحدة (أسرع وأوفر لطلبات API)
     merge_and_upload_batch(collected)
     print("🎉 انتهت المعالجة.")
 
