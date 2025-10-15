@@ -81,14 +81,14 @@ def fetch_anime_info_from_id(anime_id):
 
     title = get_text('//div[@class="anime-details"]/h1')
     description = get_text('//div[@class="anime-details"]/p')
-    image = get_attr('//div[@class="anime-cover"]/img', 'src')
+    image = get_attr('/html/body/div/div/div[1]/div/div/div[1]/div/img', 'src')
     tags = [tag.text_content().strip() for tag in tree.xpath('//div[@class="anime-details"]/ul/li') if tag.text_content().strip()]
-    type_ = get_text('//div[@class="anime-info"]/div[1]/div/a')
-    status = get_text('//div[@class="anime-info"]/div[3]/div/a')
-    episode_count = get_text('//div[@class="anime-info"]/div[4]/div')
-    duration = get_text('//div[@class="anime-info"]/div[5]/div')
-    season = get_text('//div[@class="anime-info"]/div[6]/div/a')
-    source = get_text('//div[@class="anime-info"]/div[7]/div')
+    type_ = get_text('/html/body/div/div/div[1]/div/div/div[2]/div/div[1]/div[2]/div/a')
+    status = get_text('/html/body/div/div/div[1]/div/div/div[2]/div/div[1]/div[4]/div/a')
+    episode_count = get_text('/html/body/div/div/div[1]/div/div/div[2]/div/div[1]/div[5]/div/span')
+    duration = get_text('/html/body/div/div/div[1]/div/div/div[2]/div/div[1]/div[6]/div')
+    season = get_text('/html/body/div/div/div[1]/div/div/div[2]/div/div[1]/div[7]/div/a')
+    source = get_text('/html/body/div/div/div[1]/div/div/div[2]/div/div[1]/div[10]/div')
 
     return {
         anime_id: {
