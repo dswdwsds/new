@@ -13,7 +13,7 @@ ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")  # لازم يكون PAT عندك لل�
 INPUT_REPO = "abdo12249/test"             # مكان missing_anime_log.json الصحيح
 INPUT_PATH = "missing_anime_log.json"
 OUTPUT_REPO = "abdo12249/1"               # الريبو اللي هنرفع فيه animes.json
-OUTPUT_PATH = "test1/animes.json"
+OUTPUT_PATH = "test1/animes1.json"
 BRANCH = "main"
 SLEEP_BETWEEN_FETCHES = 0.6               # لتخفيف الضغط على السيرفر
 # ------------------------------------------------
