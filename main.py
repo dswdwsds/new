@@ -94,30 +94,55 @@ def check_episode_on_github(anime_title):
 
 
 def get_episode_data(episode_url):
+    print(f"🎬 جاري معالجة: {episode_url}")
     response = scraper.get(episode_url, headers=HEADERS)
+
     if response.status_code != 200:
+        print("❌ فشل تحميل صفحة الحلقة.")
         return None, None, None, None
+
     soup = BeautifulSoup(response.text, "html.parser")
-    h3 = soup.select_one("div.main-section h3")
-    full_title = h3.get_text(strip=True) if h3 else "غير معروف"
+
+    # 🔍 استخراج اسم الأنمي ورقم الحلقة
+    title_tag = soup.select_one("h1.entry-title")
+    if title_tag:
+        full_title = title_tag.get_text(strip=True)
+    else:
+        # لو مفيش H1، جرب meta title
+        meta = soup.select_one("meta[property='og:title']")
+        full_title = meta["content"] if meta and meta.get("content") else "غير معروف"
+
+    anime_title = "غير معروف"
+    episode_number = "غير معروف"
+
     if "الحلقة" in full_title:
         parts = full_title.rsplit("الحلقة", 1)
         anime_title = parts[0].strip()
-        episode_number = parts[1].strip()
+        episode_number = re.sub(r"\D", "", parts[1])
     else:
-        anime_title = full_title
-        episode_number = "غير معروف"
+        anime_title = full_title.strip()
 
+    # 🔗 استخراج روابط السيرفرات
     servers = []
-    for a in soup.select("ul#episode-servers li a"):
+    for a in soup.select("ul#episode-servers li a, div.servers li a"):
         name = a.get_text(strip=True)
-        data_url = a.get("data-ep-url")
-        if isinstance(data_url, str):
-            url = data_url.strip()
-            if url.startswith("//"):
-                url = "https:" + url
-            servers.append({"serverName": name, "url": url})
+        data_url = a.get("data-ep-url") or a.get("href")
+        if data_url:
+            if data_url.startswith("//"):
+                data_url = "https:" + data_url
+            elif data_url.startswith("/"):
+                data_url = BASE_URL + data_url
+            servers.append({"serverName": name, "url": data_url})
+
+    # طباعة معلومات ديباج
+    print(f"🎞️ العنوان: {anime_title} | الحلقة: {episode_number} | السيرفرات: {len(servers)}")
+
+    if not servers:
+        print("⚠️ لا توجد سيرفرات لهذه الحلقة.")
+        return None, None, None, None
+
     return anime_title, episode_number, full_title, servers
+
 
 
 def log_missing_anime(anime_title, episode_link):
