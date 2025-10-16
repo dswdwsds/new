@@ -60,29 +60,46 @@ def check_episode_on_github(anime_title):
         return False, None
 
 def get_episode_data(episode_url):
-    response = scraper.get(episode_url, headers=HEADERS)
-    if response.status_code != 200:
+    try:
+        response = scraper.get(episode_url, headers=HEADERS)
+        if response.status_code != 200:
+            print(f"❌ فشل تحميل الصفحة ({response.status_code}) → {episode_url}")
+            return None, None, None, None
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        h3 = soup.select_one("div.main-section h3")
+        if not h3:
+            print(f"⚠️ لم يتم العثور على عنوان الأنمي في الصفحة: {episode_url}")
+            return None, None, None, None
+
+        full_title = h3.get_text(strip=True)
+        if "الحلقة" in full_title:
+            parts = full_title.rsplit("الحلقة", 1)
+            anime_title = parts[0].strip()
+            episode_number = parts[1].strip()
+        else:
+            anime_title = full_title.strip()
+            episode_number = "غير معروف"
+
+        servers = []
+        for a in soup.select("ul#episode-servers li a"):
+            name = a.get_text(strip=True)
+            data_url = a.get("data-ep-url")
+            if isinstance(data_url, str):
+                url = data_url.strip()
+                if url.startswith("//"):
+                    url = "https:" + url
+                servers.append({"serverName": name, "url": url})
+
+        if not servers:
+            print(f"⚠️ لم يتم العثور على سيرفرات للحلقة → {episode_url}")
+
+        return anime_title, episode_number, full_title, servers
+
+    except Exception as e:
+        print(f"💥 خطأ أثناء معالجة الحلقة {episode_url}: {e}")
         return None, None, None, None
-    soup = BeautifulSoup(response.text, "html.parser")
-    h3 = soup.select_one("div.main-section h3")
-    full_title = h3.get_text(strip=True) if h3 else "غير معروف"
-    if "الحلقة" in full_title:
-        parts = full_title.rsplit("الحلقة", 1)
-        anime_title = parts[0].strip()
-        episode_number = parts[1].strip()
-    else:
-        anime_title = full_title
-        episode_number = "غير معروف"
-    servers = []
-    for a in soup.select("ul#episode-servers li a"):
-        name = a.get_text(strip=True)
-        data_url = a.get("data-ep-url")
-        if isinstance(data_url, str):
-            url = data_url.strip()
-            if url.startswith("//"):
-                url = "https:" + url
-            servers.append({"serverName": name, "url": url})
-    return anime_title, episode_number, full_title, servers
+
 
 def log_missing_anime(anime_title, episode_link):
     api_url = f"https://api.github.com/repos/{repo_name_log}/contents/{missing_anime_log_filename}"
