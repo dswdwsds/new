@@ -34,21 +34,12 @@ def get_episode_links():
     print("📄 تحميل صفحة الحلقات...")
     response = scraper.get(EPISODE_LIST_URL, headers=HEADERS)
     
-    print("📡 حالة الصفحة:", response.status_code)
-    print("🔗 الرابط:", EPISODE_LIST_URL)
-
-    with open("page.html", "w", encoding="utf-8") as f:
-        f.write(response.text)
-    print("📁 تم حفظ الصفحة في page.html")
-
+    
     if response.status_code != 200:
         print("❌ فشل تحميل الصفحة")
         return []
     soup = BeautifulSoup(response.text, "html.parser")
-    links = [a.get("href") for a in soup.select(".episodes-card-title a") if a.get("href", "").startswith("http")]
-    print(f"🔍 تم العثور على {len(links)} روابط.")
-    print(links[:5])
-    return links
+    return [a.get("href") for a in soup.select(".episodes-card-title a") if a.get("href", "").startswith("http")]
 
 def check_episode_on_github(anime_title):
     anime_id = to_id_format(anime_title)
@@ -69,20 +60,10 @@ def check_episode_on_github(anime_title):
         return False, None
 
 def get_episode_data(episode_url):
-    print(f"🎬 جاري معالجة: {episode_url}")
     response = scraper.get(episode_url, headers=HEADERS)
     if response.status_code != 200:
-        print("❌ فشل تحميل صفحة الحلقة")
         return None, None, None, None
-
     soup = BeautifulSoup(response.text, "html.parser")
-
-    # حفظ الصفحة لتحليلها لاحقًا
-    with open("episode_debug.html", "w", encoding="utf-8") as f:
-        f.write(soup.prettify())
-    print("📁 تم حفظ صفحة الحلقة في episode_debug.html")
-
-    # استخراج العنوان ورقم الحلقة
     h3 = soup.select_one("div.main-section h3")
     full_title = h3.get_text(strip=True) if h3 else "غير معروف"
     if "الحلقة" in full_title:
@@ -92,8 +73,6 @@ def get_episode_data(episode_url):
     else:
         anime_title = full_title
         episode_number = "غير معروف"
-
-    # استخراج السيرفرات
     servers = []
     for a in soup.select("ul#episode-servers li a"):
         name = a.get_text(strip=True)
@@ -103,10 +82,6 @@ def get_episode_data(episode_url):
             if url.startswith("//"):
                 url = "https:" + url
             servers.append({"serverName": name, "url": url})
-
-    print(f"🎞️ العنوان: {anime_title} | الحلقة: {episode_number} | السيرفرات: {len(servers)}")
-    if len(servers) == 0:
-        print("⚠️ لا توجد سيرفرات لهذه الحلقة.")
     return anime_title, episode_number, full_title, servers
 
 def log_missing_anime(anime_title, episode_link):
@@ -212,7 +187,6 @@ def save_to_json(anime_title, episode_number, episode_title, servers):
     else:
         return None, None, "skip", None
 
-
 # التنفيذ
 all_links = get_episode_links()
 episodes_to_upload = {}
@@ -231,12 +205,6 @@ for idx, link in enumerate(all_links):
     else:
         print("❌ تخطيت الحلقة بسبب خطأ.")
     time.sleep(1)
-
-# تأكد من وجود episode_debug.html حتى لو لم يُنشأ
-if not os.path.exists("episode_debug.html"):
-    with open("episode_debug.html", "w", encoding="utf-8") as f:
-        f.write("<html><body><h1>لم يتم إنشاء أي ملف حلقة</h1></body></html>")
-    print("⚠️ تم إنشاء ملف episode_debug.html فارغ للتصحيح.")
 
 print("\n🚀 رفع كل الملفات إلى GitHub...")
 for filename, data in episodes_to_upload.items():
