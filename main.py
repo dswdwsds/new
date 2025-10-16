@@ -33,6 +33,15 @@ def to_id_format(text):
 def get_episode_links():
     print("📄 تحميل صفحة الحلقات...")
     response = scraper.get(EPISODE_LIST_URL, headers=HEADERS)
+    
+    print("📡 حالة الصفحة:", response.status_code)
+    print("🔗 الرابط:", EPISODE_LIST_URL)
+
+    with open("page.html", "w", encoding="utf-8") as f:
+        f.write(response.text)
+    print("📁 تم حفظ الصفحة في page.html")
+
+
     if response.status_code != 200:
         print("❌ فشل تحميل الصفحة")
         return []
