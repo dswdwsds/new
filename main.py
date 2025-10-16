@@ -39,7 +39,7 @@ def get_episode_links():
         print("❌ فشل تحميل الصفحة")
         return []
     soup = BeautifulSoup(response.text, "html.parser")
-    return [a.get("href") for a in soup.select(".episodes-card-title a") if a.get("href", "").startswith("http")]
+    return [a.get("href") for a in soup.select("div.anime-card-poster div.hover.ehover6 a") if a.get("href", "").startswith("http")]
 
 def check_episode_on_github(anime_title):
     anime_id = to_id_format(anime_title)
