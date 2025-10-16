@@ -40,7 +40,6 @@ def get_episode_links():
     print("📡 حالة الصفحة:", response.status_code)
     print("🔗 الرابط:", EPISODE_LIST_URL)
 
-    # حفظ الصفحة لفحصها لاحقًا
     with open("page.html", "w", encoding="utf-8") as f:
         f.write(response.text)
     print("📁 تم حفظ الصفحة في page.html")
@@ -51,11 +50,28 @@ def get_episode_links():
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # ✅ المحددات الجديدة لروابط الحلقات
-    links = [a.get("href") for a in soup.select(".ep-card-title a, .card-title a, .ep-card a") if a.get("href", "").startswith("http")]
+    # 🧠 البحث عن جميع الروابط داخل كروت الحلقات
+    possible_selectors = [
+        "div a[href*='/episode/']",  # أي رابط فيه /episode/
+        "div div a[href*='4i.nxdwle.shop/episode']",  # روابط مطلقة
+        "a[href*='/episode/']",  # كاحتياط
+    ]
+
+    links = []
+    for selector in possible_selectors:
+        found = [a.get("href") for a in soup.select(selector) if a.get("href")]
+        links.extend(found)
+
+    # إزالة التكرار
+    links = list(dict.fromkeys(links))
+
+    # تصفية الروابط للتأكد أنها فعلاً تخص الحلقات
+    links = [l if l.startswith("http") else BASE_URL + l for l in links if "/episode/" in l]
+
     print(f"🔍 تم العثور على {len(links)} روابط.")
     print(links[:5])
     return links
+
 
 
 def check_episode_on_github(anime_title):
