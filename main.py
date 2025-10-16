@@ -22,7 +22,9 @@ BASE_URL = "https://4i.nxdwle.shop"
 EPISODE_LIST_URL = BASE_URL + "/episode/"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-scraper = cloudscraper.create_scraper()
+# تفعيل محاكي متصفح قوي لتفادي الحماية
+scraper = cloudscraper.create_scraper(browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False})
+
 
 def to_id_format(text):
     text = text.strip().lower()
@@ -30,23 +32,31 @@ def to_id_format(text):
     text = re.sub(r"[^a-z0-9()!\- ]", "", text)
     return text.replace(" ", "-")
 
+
 def get_episode_links():
     print("📄 تحميل صفحة الحلقات...")
     response = scraper.get(EPISODE_LIST_URL, headers=HEADERS)
-    
+
     print("📡 حالة الصفحة:", response.status_code)
     print("🔗 الرابط:", EPISODE_LIST_URL)
 
+    # حفظ الصفحة لفحصها لاحقًا
     with open("page.html", "w", encoding="utf-8") as f:
         f.write(response.text)
     print("📁 تم حفظ الصفحة في page.html")
 
-
     if response.status_code != 200:
         print("❌ فشل تحميل الصفحة")
         return []
+
     soup = BeautifulSoup(response.text, "html.parser")
-    return [a.get("href") for a in soup.select(".episodes-card-title a") if a.get("href", "").startswith("http")]
+
+    # ✅ المحددات الجديدة لروابط الحلقات
+    links = [a.get("href") for a in soup.select(".ep-card-title a, .card-title a, .ep-card a") if a.get("href", "").startswith("http")]
+    print(f"🔍 تم العثور على {len(links)} روابط.")
+    print(links[:5])
+    return links
+
 
 def check_episode_on_github(anime_title):
     anime_id = to_id_format(anime_title)
@@ -66,6 +76,7 @@ def check_episode_on_github(anime_title):
     else:
         return False, None
 
+
 def get_episode_data(episode_url):
     response = scraper.get(episode_url, headers=HEADERS)
     if response.status_code != 200:
@@ -80,6 +91,7 @@ def get_episode_data(episode_url):
     else:
         anime_title = full_title
         episode_number = "غير معروف"
+
     servers = []
     for a in soup.select("ul#episode-servers li a"):
         name = a.get_text(strip=True)
@@ -90,6 +102,7 @@ def get_episode_data(episode_url):
                 url = "https:" + url
             servers.append({"serverName": name, "url": url})
     return anime_title, episode_number, full_title, servers
+
 
 def log_missing_anime(anime_title, episode_link):
     api_url = f"https://api.github.com/repos/{repo_name_log}/contents/{missing_anime_log_filename}"
@@ -127,6 +140,7 @@ def log_missing_anime(anime_title, episode_link):
             payload["sha"] = sha
         scraper.put(api_url, headers=headers, json=payload)
 
+
 def update_new_json_list(new_anime_filename):
     new_json_url = f"https://abdo12249.github.io/1/test1/episodes/{new_anime_filename}"
     api_url = f"https://api.github.com/repos/{repo_name}/contents/test1/الجديد.json"
@@ -155,6 +169,7 @@ def update_new_json_list(new_anime_filename):
         if sha:
             payload["sha"] = sha
         scraper.put(api_url, headers=headers, json=payload)
+
 
 def save_to_json(anime_title, episode_number, episode_title, servers):
     anime_id = to_id_format(anime_title)
@@ -193,6 +208,7 @@ def save_to_json(anime_title, episode_number, episode_title, servers):
         return filename, github_data, "update", ep_data
     else:
         return None, None, "skip", None
+
 
 # التنفيذ
 all_links = get_episode_links()
