@@ -41,3 +41,9 @@ jobs:
       with:
         name: page
         path: page.html
+
+    - name: رفع episode_debug.html
+      uses: actions/upload-artifact@v4
+      with:
+        name: episode_debug
+        path: episode_debug.html
