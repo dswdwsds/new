@@ -33,8 +33,6 @@ def to_id_format(text):
 def get_episode_links():
     print("📄 تحميل صفحة الحلقات...")
     response = scraper.get(EPISODE_LIST_URL, headers=HEADERS)
-    
-    
     if response.status_code != 200:
         print("❌ فشل تحميل الصفحة")
         return []
@@ -82,14 +80,36 @@ def get_episode_data(episode_url):
             episode_number = "غير معروف"
 
         servers = []
+        # استخراج كل السيرفرات
         for a in soup.select("#episode-servers li a"):
             name = a.get_text(strip=True)
             data_url = a.get("data-ep-url")
-            if isinstance(data_url, str):
-                url = data_url.strip()
-                if url.startswith("//"):
-                    url = "https:" + url
-                servers.append({"serverName": name, "url": url})
+            if not data_url:
+                continue
+
+            # تنظيف الرابط
+            if data_url.startswith("//"):
+                data_url = "https:" + data_url
+            elif data_url.startswith("/"):
+                data_url = BASE_URL + data_url
+
+            # تحميل صفحة السيرفر
+            try:
+                sub_response = scraper.get(data_url, headers=HEADERS)
+                if sub_response.status_code == 200:
+                    sub_soup = BeautifulSoup(sub_response.text, "html.parser")
+                    iframe = sub_soup.select_one("iframe#episode-iframe, iframe[src]")
+                    if iframe and iframe.get("src"):
+                        iframe_url = iframe.get("src").strip()
+                        if iframe_url.startswith("//"):
+                            iframe_url = "https:" + iframe_url
+                        servers.append({"serverName": name, "url": iframe_url})
+                    else:
+                        print(f"⚠️ لم أجد iframe في سيرفر {name}")
+                else:
+                    print(f"❌ فشل تحميل سيرفر {name}: {sub_response.status_code}")
+            except Exception as err:
+                print(f"⚠️ خطأ في سيرفر {name}: {err}")
 
         if not servers:
             print(f"⚠️ لم يتم العثور على سيرفرات للحلقة → {episode_url}")
